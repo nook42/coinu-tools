@@ -1,0 +1,164 @@
+{
+  "en": {
+    "labels": {
+      "adminHistory": "System — Administrator change history",
+      "entries": "Stage A — Frozen entry data",
+      "selection": "Stage B — Lottery",
+      "grouping": "Stage B — Group formation",
+      "resultFiles": "Stage C — Published result commitments",
+      "locks": "Stage C — Lock eligibility at the lottery block",
+      "scoring": "Stage C — Scoring and reward amounts",
+      "publicMerkle": "Stage C — Published summary, Merkle root and on-chain claim data consistency (not payout fairness)",
+      "evidence": "Stage C — Evidence adoption at the safe block",
+      "timeline": "Stage C — Result and claim windows",
+      "proofPublicValues": "Stage C — ZKP public values",
+      "proofHistory": "Stage C — State at proof time"
+    },
+    "unverified": {
+      "stopped": "Unverified (verification stopped before this part could be checked)",
+      "failed": "Unverified (one or more checks FAILED — see the problems listed above)",
+      "archiveUnavailable": "Unverified (This node cannot read historical state. For full verification, specify an archive-capable RPC URL.)",
+      "rpcRequestFailed": "Unverified (The RPC request failed. Check the RPC URL and try again.)"
+    },
+    "notApplicable": "Not required for this block mode",
+    "publicnode": [
+      "publicnode can only read recent state, so some checks are unavailable.",
+      "Can verify:",
+      "  ・Stage A — Frozen entry data",
+      "  ・Stage B — Lottery",
+      "  ・Stage B — Group formation",
+      "  ・Stage C — Published result commitments",
+      "  ・Stage C — Published summary, Merkle root and on-chain claim data consistency (not payout fairness)",
+      "  ・Stage C — Evidence adoption at the safe block",
+      "  ・Stage C — ZKP public values",
+      "Cannot verify:",
+      "  ・System — Administrator change history",
+      "  ・Stage C — Lock eligibility at the lottery block",
+      "  ・Stage C — Scoring and reward amounts",
+      "  ・Stage C — Result and claim windows",
+      "  ・Stage C — State at proof time"
+    ],
+    "guarantees": {
+      "entries": "The entry data published under {entriesUrl} is guaranteed to be the data used for the lottery.",
+      "selection": "The lottery results published at {blockUrl} are guaranteed to have been produced by the prescribed algorithm using randomness (RANDAO) generated after the entry data was frozen, and to be completely random and free from manipulation by anyone.",
+      "grouping": "The groups published at {blockUrl} are guaranteed to have been selected by the prescribed algorithm using randomness (RANDAO) generated after the entry data was frozen, and to be completely random and free from manipulation by anyone.",
+      "adminHistory": "It is guaranteed that all records of admin and SuperAdmin changes for TokenMining, Evidence, HashStorage, and BitcoinuDonate have been read from deployment onward. Any changes are shown as warnings.",
+      "resultFiles": "The results published at {blockUrl} are guaranteed to match the result manifest registered on-chain.",
+      "locks": "Each player's lock eligibility and amounts are guaranteed to have been determined according to the prescribed rules from on-chain records at the time of the lottery.",
+      "scoring": "The scores and reward amounts in the results published at {blockUrl} are guaranteed to match the results recalculated by the prescribed scoring code.",
+      "publicMerkle": "The reward Merkle root and claim data registered on-chain are guaranteed to match the allocation in the results published at {blockUrl}, and the claimable amounts are guaranteed to follow that allocation.",
+      "evidence": "It is guaranteed that all results submitted directly on-chain (Evidence) up to the safe block have been read and included in the inputs for adoption.",
+      "timeline": "The reward Merkle root is guaranteed to have been submitted according to the prescribed rules after the result submission period closed, and the verification and claim periods are guaranteed to follow the on-chain records.",
+      "proofPublicValues": "The ZKP proof submitted on-chain is guaranteed to be bound to on-chain values such as this block's entry data, randomness, Evidence, and result manifest.",
+      "proofHistory": "The future anchors used by the ZKP proof are guaranteed to match the chain state at the time of the proof."
+    }
+  },
+  "ja": {
+    "labels": {
+      "adminHistory": "システム — 管理者の交代の履歴",
+      "entries": "Stage A — 応募データの固定",
+      "selection": "Stage B — 抽選",
+      "grouping": "Stage B — グループ分け",
+      "resultFiles": "Stage C — 公開結果の固定",
+      "locks": "Stage C — 抽選時点のロックの適格性",
+      "scoring": "Stage C — 採点と報酬の額",
+      "publicMerkle": "Stage C — 公開 summary・Merkle・チェーン上の請求データの一致（配分の公正さは含まない）",
+      "evidence": "Stage C — 安全ブロック時点の Evidence の採用",
+      "timeline": "Stage C — 結果確定と請求の期間",
+      "proofPublicValues": "Stage C — ZKP の公開値",
+      "proofHistory": "Stage C — 証明の時点の状態"
+    },
+    "unverified": {
+      "stopped": "検証できなかった（この部分の検証に到達する前に処理が終了しました）",
+      "failed": "検証できなかった（1つ以上のチェックが不合格でした — 上記の問題一覧を確認してください）",
+      "archiveUnavailable": "検証できなかった（このノードは過去の時点の状態を読めません。全部を検証するにはアーカイブ対応の RPC を指定してください。）",
+      "rpcRequestFailed": "検証できなかった（RPC への要求に失敗しました。RPC の URL を確認して再試行してください。）"
+    },
+    "notApplicable": "このブロックの配布方式では検査対象なし",
+    "publicnode": [
+      "publicnode は直近の状態しか読めないため、一部の検証ができません。",
+      "検証できること:",
+      "  ・Stage A — 応募データの固定",
+      "  ・Stage B — 抽選",
+      "  ・Stage B — グループ分け",
+      "  ・Stage C — 公開結果の固定",
+      "  ・Stage C — 公開 summary・Merkle・チェーン上の請求データの一致（配分の公正さは含まない）",
+      "  ・Stage C — 安全ブロック時点の Evidence の採用",
+      "  ・Stage C — ZKP の公開値",
+      "検証できないこと:",
+      "  ・システム — 管理者の交代の履歴",
+      "  ・Stage C — 抽選時点のロックの適格性",
+      "  ・Stage C — 採点と報酬の額",
+      "  ・Stage C — 結果確定と請求の期間",
+      "  ・Stage C — 証明の時点の状態"
+    ],
+    "guarantees": {
+      "entries": "{entriesUrl} 以下で公開されている応募データは、抽選に使われたものであることが保証されます。",
+      "selection": "{blockUrl} で公開されている抽選結果は、応募データが固定されたあとに発生する乱数(RANDAO)に基づいて規定のアルゴリズム通りに実行された結果であり、完全にランダムで誰の操作も入っていないことが保証されます。",
+      "grouping": "{blockUrl} で公開されているグループは、応募データが固定されたあとに発生する乱数(RANDAO)に基づいて規定のアルゴリズム通りに選定された結果であり、完全にランダムで誰の操作も入っていないことが保証されます。",
+      "adminHistory": "TokenMining・Evidence・HashStorage・BitcoinuDonate の管理者（admin）と SuperAdmin の交代の記録を、配備の時から全部読んだことが保証されます。交代があった場合は警告に表示されます。",
+      "resultFiles": "{blockUrl} で公開されている結果は、チェーンに登録された結果のマニフェストと一致することが保証されます。",
+      "locks": "各プレイヤーのロックの適格性と額は、抽選の時点のチェーンの記録から規定どおりに判定されていることが保証されます。",
+      "scoring": "{blockUrl} で公開されている結果の採点と報酬の額は、規定の採点のコードで計算し直した結果と一致することが保証されます。",
+      "publicMerkle": "チェーンに登録された報酬の Merkle ルートと請求データは、{blockUrl} で公開されている結果の配分と一致し、請求できる額はその配分のとおりであることが保証されます。",
+      "evidence": "チェーン（Evidence）に直接提出された結果は、安全ブロックの時点まですべて読まれ、採用の入力に含まれていることが保証されます。",
+      "timeline": "報酬の Merkle ルートは結果の提出期間が閉じた後に規定どおり提出され、検証期間と請求期間はチェーンの記録どおりであることが保証されます。",
+      "proofPublicValues": "チェーンに提出された ZKP の証明は、このブロックの応募データ・乱数・Evidence・結果のマニフェストなど、チェーン上の値に結び付いていることが保証されます。",
+      "proofHistory": "ZKP の証明が使った将来のアンカーは、証明の時点のチェーンの状態と一致していることが保証されます。"
+    }
+  },
+  "zh": {
+    "labels": {
+      "adminHistory": "系统 — 管理员变更历史",
+      "entries": "Stage A — 报名数据固定",
+      "selection": "Stage B — 抽选",
+      "grouping": "Stage B — 分组",
+      "resultFiles": "Stage C — 公开结果承诺",
+      "locks": "Stage C — 抽选时的锁定资格",
+      "scoring": "Stage C — 评分和奖励金额",
+      "publicMerkle": "Stage C — 公开 summary、Merkle 和链上领取数据一致性（不含分配公平性）",
+      "evidence": "Stage C — 安全区块时的 Evidence 采用",
+      "timeline": "Stage C — 结果和领取期间",
+      "proofPublicValues": "Stage C — ZKP 公开值",
+      "proofHistory": "Stage C — 证明时点的状态"
+    },
+    "unverified": {
+      "stopped": "未验证（验证在到达此部分之前已结束）",
+      "failed": "未验证（有一项或多项检查失败——请查看上方列出的问题）",
+      "archiveUnavailable": "未验证（此节点无法读取历史状态。如需完整验证，请指定支持归档的 RPC URL。）",
+      "rpcRequestFailed": "未验证（RPC 请求失败，请检查 RPC URL 后重试。）"
+    },
+    "notApplicable": "此区块的分配方式无需此检查",
+    "publicnode": [
+      "publicnode 只能读取近期状态，因此部分检查无法完成。",
+      "可以验证:",
+      "  ・Stage A — 报名数据固定",
+      "  ・Stage B — 抽选",
+      "  ・Stage B — 分组",
+      "  ・Stage C — 公开结果承诺",
+      "  ・Stage C — 公开 summary、Merkle 和链上领取数据一致性（不含分配公平性）",
+      "  ・Stage C — 安全区块时的 Evidence 采用",
+      "  ・Stage C — ZKP 公开值",
+      "无法验证:",
+      "  ・系统 — 管理员变更历史",
+      "  ・Stage C — 抽选时的锁定资格",
+      "  ・Stage C — 评分和奖励金额",
+      "  ・Stage C — 结果和领取期间",
+      "  ・Stage C — 证明时点的状态"
+    ],
+    "guarantees": {
+      "entries": "可以保证，{entriesUrl} 下公开的报名数据就是抽选所使用的数据。",
+      "selection": "可以保证，{blockUrl} 公开的抽选结果是依据报名数据固定之后产生的随机数（RANDAO），按照规定的算法执行得到的结果，完全随机，没有任何人的操纵。",
+      "grouping": "可以保证，{blockUrl} 公开的小组是依据报名数据固定之后产生的随机数（RANDAO），按照规定的算法选定的结果，完全随机，没有任何人的操纵。",
+      "adminHistory": "可以保证，已从合约部署时起读取 TokenMining、Evidence、HashStorage、BitcoinuDonate 的管理员（admin）和 SuperAdmin 变更记录，且无遗漏。如有变更，会在警告中显示。",
+      "resultFiles": "可以保证，{blockUrl} 公开的结果与链上登记的结果清单一致。",
+      "locks": "可以保证，每位玩家的锁定资格和金额均依据抽选时的链上记录，按照规定的规则判定。",
+      "scoring": "可以保证，{blockUrl} 公开的结果中的评分和奖励金额，与使用规定的评分代码重新计算的结果一致。",
+      "publicMerkle": "可以保证，链上登记的奖励 Merkle 根和领取数据，与 {blockUrl} 公开的结果中的分配一致，可领取的金额符合该分配。",
+      "evidence": "可以保证，截至安全区块直接提交到链上（Evidence）的结果已全部读取，并包含在采用流程的输入中。",
+      "timeline": "可以保证，奖励 Merkle 根是在结果提交期结束后按规定提交的，验证期和领取期符合链上记录。",
+      "proofPublicValues": "可以保证，提交到链上的 ZKP 证明与此区块的报名数据、随机数、Evidence、结果清单等链上值绑定。",
+      "proofHistory": "可以保证，ZKP 证明使用的未来锚点与证明时点的链上状态一致。"
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "bitcoinu-chatgame-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "COINU chat-game companion tools — (1) F1 loader: verify the operator-served Next.js build against the chain-anchored buildHash and execute only on match; (2) minimal recovery client: full game participation (chat/vote/report/receipts/result-submit) via wallet + public Nostr relays + Evidence.submitResult, byte-exact against the canonical implementation (vendored).",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "check-vendor-sync": "node scripts/check-vendor-sync.mjs",
+    "gen-manifest": "node build/gen-manifest.mjs",
+    "verify-determinism": "node build/verify-determinism.mjs",
+    "bundle": "node build/bundle.mjs",
+    "test:loader": "node test/loader-e2e.mjs",
+    "test:recovery": "node test/recovery-e2e.mjs",
+    "test:self-action": "node test/self-action-unit.mjs",
+    "test:intent": "node test/self-verify-intent-unit.mjs",
+    "test:bundle": "node test/bundle-unit.mjs",
+    "test:trim": "node test/trim-policy-unit.mjs",
+    "test:roster": "node test/roster-reconstruction-unit.mjs",
+    "test:r14-f6": "node test/r14-f6-recovery-relay-unit.mjs",
+    "test:relay-ingress": "node test/relay-canonical-ingress-unit.mjs",
+    "test:visible-char-progress": "node test/visible-char-progress-unit.mjs"
+  },
+  "dependencies": {
+    "@noble/ciphers": "1.3.0",
+    "@noble/curves": "1.9.1",
+    "@noble/hashes": "1.8.0",
+    "buffer": "6.0.3",
+    "eciesjs": "0.4.17",
+    "viem": "2.42.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.0"
+  },
+  "notes": "Dependencies pinned to the exact versions the monorepo root resolves (byte-exact reproduction requirement). No ethers. vendor/ mirrors canonical workers/ + src/utils/ files — see VENDOR_SYNC.md; verify with npm run check-vendor-sync."
+}

@@ -1,0 +1,26 @@
+{
+  "name": "bitcoinu-block-verifier",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "COINU independent block verifier — re-derives entry freezing, lottery, grouping, scoring, rewards and merkle root from public R2 data + user-chosen Ethereum RPC, byte-exact against the canonical implementation (vendored).",
+  "bin": {
+    "bitcoinu-verify": "src/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node test/unit-suite.mjs",
+    "check-vendor-sync": "node scripts/check-vendor-sync.mjs"
+  },
+  "dependencies": {
+    "@noble/ciphers": "1.3.0",
+    "@noble/curves": "1.9.1",
+    "@noble/hashes": "1.8.0",
+    "eciesjs": "0.4.17",
+    "viem": "2.42.0"
+  },
+  "notes": "Dependencies are pinned to the exact versions the monorepo root resolves (byte-exact reproduction requirement). No ethers. vendor/ mirrors canonical workers/ files — see VENDOR_SYNC.md; verify with npm run check-vendor-sync."
+}

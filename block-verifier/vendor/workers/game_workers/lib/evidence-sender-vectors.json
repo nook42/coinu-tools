@@ -1,0 +1,25 @@
+{
+  "rule": "Evidence.sol acc_i = keccak256(acc_(i-1)[32] || sender[20] || keccak256(data_i)[32])",
+  "initialAcc": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "events": [
+    { "sender": "0x1111111111111111111111111111111111111111", "data": "0x010203", "acc": "0x4eade696c7c0ca8fb287e5ca63821ba7f2d3b417b2ee12155f1cd152336ee17b" },
+    { "sender": "0x2222222222222222222222222222222222222222", "data": "0x", "acc": "0x40a53e294301e8ecf8bdf3f5b8d2aee92c54340008006ebecd2ba478832b3756" },
+    { "sender": "0x1111111111111111111111111111111111111111", "data": "0xdeadbeef", "acc": "0x4d0cc5b729d08af7dc21a1e70d8f9b9dc73af856189e244521dcc747a7e32f87" }
+  ],
+  "adoption": {
+    "uid": "1000000000000000001",
+    "memberAddr": "0x1111111111111111111111111111111111111111",
+    "candidates": [
+      { "seq": 1, "sender": "0x2222222222222222222222222222222222222222", "bundleValid": true, "reason": "sender_mismatch" },
+      { "seq": 2, "sender": "0x1111111111111111111111111111111111111111", "bundleValid": false, "reason": "invalid_signature" },
+      { "seq": 3, "sender": "0x1111111111111111111111111111111111111111", "bundleValid": true, "reason": "adopted" },
+      { "seq": 4, "sender": "0x1111111111111111111111111111111111111111", "bundleValid": true, "reason": "later_valid" }
+    ],
+    "adoptedSeq": 3
+  },
+  "caseFold": {
+    "memberAddr": "0xabababababababababababababababababababab",
+    "sender": "0xAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAb",
+    "matches": true
+  }
+}

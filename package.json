@@ -1,0 +1,11 @@
+{
+  "name": "coinu-tools",
+  "private": true,
+  "description": "Independent tools for checking COINU: block verifier and chat game recovery client",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "viem": "2.42.0"
+  }
+}

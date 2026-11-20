@@ -1,0 +1,4 @@
+node_modules/
+.determinism/
+*.log
+.DS_Store
