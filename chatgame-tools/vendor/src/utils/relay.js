@@ -35,15 +35,31 @@ export { deriveNostrKey } from './p2pKeys.js';
 // 全イベント種別を同一kindで発行（メタデータ最小化・§3.2）
 export const P2P_EVENT_KIND = 7742;
 
-// デフォルトリレー（§3.3 curation: 地理・運営主体分散。ユーザーが設定で置換可能）。
-// ⚠️ 分散性はNostrプロトコルの保証ではなくリレー選択の問題。per-pubkeyレート制限のある
-// リレーを優先（§9.4b）。本番前に要ユーザーレビュー（P2P_IMPL_DECISIONS.md）。
+// デフォルトリレー（運営する主体と置き場の分散。ユーザーが設定で置換可能）。
+// ⚠️ 分散性はNostrプロトコルの保証ではなくリレー選択の問題。
+// 🔴 R5-RELAY1（2026-11-23 ユーザー決定・版 11）: 5本から7本にした。選ぶ基準は2つ。
+//    (1) 書き込みの実測（R5-RELAY2・2026-11-22〜23）: 試験の鍵で、1人が1ゲームに書きうる最大の
+//        約1,200件の kind 7742 を書いて読み戻した。応募ごとに導出する新しい鍵の書き込みを、
+//        認証・支払いなしで全部受けて保存したリレーだけを残している（nos.lol だけは、同じ回線から
+//        約1,100件で1時間ほど断る）。
+//    (2) 多くの国から届くこと（ユーザー決定「日本を基準にしない・できるだけ多くの国で使える7本」）:
+//        各国の計測ノードから読んで、国ごとの遮断の少ない物を選んだ。日本の外から 403 になる
+//        relay-jp.nostr.wirednet.jp と、イランから届かない relay.nostr.net は入れていない。
+//    記録は docs/external-audit/RELEASE_CHECKLIST.md の R5-RELAY1／R5-RELAY2。
+//    - 先頭の2本（nos.lol・relay.primal.net）は版 10 までの一覧と共通。古い画面を開いたままの人と
+//      新しい画面の人は、この2本でつながる。一覧を見直すときも、共通のリレーを2本以上残すこと。
+//      この2本は中国の計測ノードからは届かなかった（残りの5本は届いた）。
+//    - 外した3本: relay.damus.io・relay.nostr.band（実測で接続できない）・offchain.pub（信頼の網に無い鍵の
+//      書き込みを5分に約15件へ絞る）。
+//    - 本数に依存するコードは無い（全部へ同時に接続し、全部へ送り、重複は id で捨てる）。
 export const DEFAULT_RELAYS = [
-  'wss://relay.damus.io',
   'wss://nos.lol',
-  'wss://relay.nostr.band',
-  'wss://offchain.pub',
   'wss://relay.primal.net',
+  'wss://yabu.me',
+  'wss://relay.satlantis.io',
+  'wss://relay.angor.io',
+  'wss://purplerelay.com',
+  'wss://relay.ditto.pub',
 ];
 
 // 沈静化窓（R3・§2.5）: チャット窓終端後、提出ビュー凍結前にリレー伝播を待つ時間。

@@ -4835,7 +4835,7 @@ function renderSubmitSection() {
 function renderRelaySettings() {
   const area = $('relay-area');
   area.innerHTML = '';
-  const ta = el('textarea', { value: getRelayList().join('\n'), rows: 5 });
+  const ta = el('textarea', { value: getRelayList().join('\n'), rows: 8 });
   const btn = el('button', {
     textContent: state.tr('recovery.relay.save'),
     onclick: () => {

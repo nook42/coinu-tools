@@ -1,3 +1,4 @@
+> **版 11 便 RL11（2026-11-23）:** 既定の Nostr リレーの一覧を5本から7本にした（`nos.lol`・`relay.primal.net`・`yabu.me`・`relay.satlantis.io`・`relay.angor.io`・`purplerelay.com`・`relay.ditto.pub`。ユーザーの決め・国ごとの到達と書き込みの実測で選んだ）。正典 `src/utils/relay.js` は `DEFAULT_RELAYS` とその上のコメントだけを変え、`vendor/src/utils/relay.js` へ byte-exact に COPY（sha256 `6809b449bbf4c1de1367e5ca4b0bf3f64f5d0a6972df6a5ab2ce415aca0ff882`）。復元の設定欄（`src/recovery/app.js`）は入力欄の行数を5から8にしただけ。記録は `docs/external-audit/RELEASE_CHECKLIST.md` の R5-RELAY1／R5-RELAY2 と `audit/relay-list-v11/`。
 > **2026-11-15 WR-PRE-ADMINGAS-FIX1:** GMの正常待ちからfee_cap_blockedを外した正典をbyte同一でCOPY。同じ行数の全GM MIRROR窓を旧sha256で全走査し、各1箇所に一致（行位置・本文・sha256は不変）。COPYのsha256を更新し、復元distを再生成した。ChatGameDOの写しは変更していない。
 > **2026-11-15 便 WR-PRE-PRESENCE:** presence の枠を容量120・30秒に1つ戻る形にし、不変activeの合図をuidごと60秒に1回まで配る ChatGameDO を正典から byte 同一で COPY。完了した WR-PRE-ADMINGAS の GM も同期した。対象の MIRROR は旧 sha256 の同長窓を全走査し、唯一一致の位置へ行範囲だけを付け直した。dist は Node 22 の既存 build/bundle.mjs で再生成する。
 > **2026-10-27 WR-RPC2-GM-FIX4:** `game-master-DO.js` を正典から byte 同一で COPY。GM MIRROR 1 窓は旧写しの本文・sha256 と新正典の同長全走査を照らし、各窓が一意に一致した。本文と sha256 は据え置き、行範囲だけ更新。
@@ -172,7 +173,7 @@ MIRROR 行は **正典ソースの該当行範囲**（1-indexed・両端含む�
 | `vendor/src/utils/evidence-trim-policy.js` | `src/utils/evidence-trim-policy.js` | `f6a3f7a37247d925fc64cdc2abf8c7a4ba78ea215db1972f1cc3cd2f09baf3e4` | COPY |
 | `vendor/src/utils/walletTools.js` | `src/utils/walletTools.js` | `864f708324d7a1cd328c63c03a2aed7e058a9c0dd3fd5788c02808a4d2c2c0c1` | COPY |
 | `vendor/src/utils/p2pKeys.js` | `src/utils/p2pKeys.js` | `79a10eb0e3196d1e04450356a346c8a73c5325242bfa3e592a65fc65f8cac56f` | COPY |
-| `vendor/src/utils/relay.js` | `src/utils/relay.js` | `d57e7a50f9e2910a003b60b91b2cc8108e0268add2e145ecba6d14b23eb14ef5` | COPY |
+| `vendor/src/utils/relay.js` | `src/utils/relay.js` | `6809b449bbf4c1de1367e5ca4b0bf3f64f5d0a6972df6a5ab2ce415aca0ff882` | COPY |
 | `vendor/src/utils/priorityEvidence.js` | `src/utils/priorityEvidence.js` | `1740a73d4234f20b95c4c89a3dc86bd5f88f060e2ee4274c16769cd2dd837d35` | COPY |
 | `vendor/src/utils/receipt-warnings.js` | `src/utils/receipt-warnings.js` | `99daf5746e3c3284e0afe4fe8e07d2a473a67e84a26032872b9c5f8920b1c204` | COPY |
 | `vendor/src/utils/chainClock.js` | `src/utils/chainClock.js` | `802ea3c15b3f6efd4630a23578e44d9ce2770f1e87240874e800e7f6a4f5f43e` | COPY |
