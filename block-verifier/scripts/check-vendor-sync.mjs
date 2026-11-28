@@ -80,6 +80,8 @@ const COPIES = [
   // S6 持ち越し課題の解消（2026-07-29）: vendor の chat-game-DO.js は import されないため
   // 台帳に無く、手コピーで静かに古びる状態だった。COPY 台帳に載せて drift を機械検出する。
   ['vendor/workers/game_workers/chat-game-DO.js', 'workers/game_workers/chat-game-DO.js'],
+  // 2026-11-26 便 STAMP: 写しの ChatGameDO が import する、発言へのスタンプの共有の形。
+  ['vendor/workers/game_workers/lib/reaction.js', 'workers/game_workers/lib/reaction.js'],
   // P2b-2c: 共有の既読入口。公式の提出 MIRROR 窓は本体不変を検査する。
   ['vendor/workers/game_workers/lib/protocol-v2.js', 'workers/game_workers/lib/protocol-v2.js'],
   ['vendor/workers/game_workers/lib/submission-limits.js', 'workers/game_workers/lib/submission-limits.js'],
@@ -154,7 +156,8 @@ const MIRRORS = [
     // 2026-11-07 便 WR-E2E-S2-GMGROUP-FIX2（開始関門の待ちの終わりの道・警報の印の原因と配送の結果）: GM 前方で +53 行。旧 sha256 の同じ行数の窓を新しい GM で全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 便 WR-PRE-PRESENCE（presence の時間回復・合図の配信・ADMINGAS の同期）: 前方で +25 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 WR-PRE-ADMINGAS-FIX1: 同長窓を全走査し唯一一致を再確認。本文・sha256・行位置は不変。
-    startLine: 16962, endLine: 16966,
+    // 2026-11-25 便 PLAYAT（参加予定時刻の事前設定: 集める仕事 availability_seed）: 前方で +349 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    startLine: 17311, endLine: 17315,
     sha256: 'c77ef5c98b2e2f974483c5e4b533628bf748e7566bf94da7ea963fdbe20b7986',
     mirrorFile: 'src/stages/results.js',
     mirrorSignature: 'export function autoRosterTextFromSelection(blockNum, players) {',
@@ -174,8 +177,13 @@ const MIRRORS = [
     // S3C11b: WS 接続の合計上限・受信ガード・同時 upgrade の判定を前方へ追加。21行窓は唯一一致。
     // 2026-09-27 周33 便 S3C13（文書の一括）: 定数のコメントで前方 +1 行。旧sha256の21行窓は全走査で772-792に唯一一致（中身は不変）。
     // 2026-11-15 便 WR-PRE-PRESENCE（presence の時間回復・合図の配信・ADMINGAS の同期）: 前方で +26 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
-    startLine: 800,
-    endLine: 818,
+    // 2026-11-25 便 PLAYAT（参加予定時刻の事前設定: 受け取る口 /seed-availability と WS の印）: 前方で +15 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 STAMP（発言へのスタンプの口）: 前方に足した import・定数の行で +5 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 LIKE（いいね）: DO の前方に枠の関数と定数を足して窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 DOMOVED（移った実体の WS を閉じる）: DO の前方に定数と判定の関数を足して窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 DOMOVED・LIKE（反証と Lean の直し）: 前方の行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    startLine: 861,
+    endLine: 879,
     sha256: '1e548c657d58f66ed592d2af8199e1aa5aa5092456c69dec9a6502f9684f33c2',
     mirrorFile: 'src/stages/results.js',
     mirrorSignature: 'export function rosterMembersOf(group) {',
@@ -218,7 +226,8 @@ const MIRRORS = [
     // 2026-11-07 便 WR-E2E-S2-GMGROUP-FIX2（開始関門の待ちの終わりの道・警報の印の原因と配送の結果）: GM 前方で +46 行。旧 sha256 の同じ行数の窓を新しい GM で全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 便 WR-PRE-PRESENCE（presence の時間回復・合図の配信・ADMINGAS の同期）: 前方で +0 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 WR-PRE-ADMINGAS-FIX1: 同長窓を全走査し唯一一致を再確認。本文・sha256・行位置は不変。
-    startLine: 7109, endLine: 7134,
+    // 2026-11-25 便 PLAYAT（参加予定時刻の事前設定: 集める仕事 availability_seed）: 前方で +342 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    startLine: 7451, endLine: 7476,
     sha256: 'ebde280106257101672f3c27f9996225f96a142f9022d0fa2efaa5b5d630cb61',
     mirrorFile: 'src/stages/results.js',
     mirrorSignature: 'export function reconstructedRosterIndexSha256(groups) {',
@@ -235,7 +244,8 @@ const MIRRORS = [
     // 2026-11-07 便 WR-E2E-S2-GMGROUP-FIX2（開始関門の待ちの終わりの道・警報の印の原因と配送の結果）: GM 前方で +46 行。旧 sha256 の同じ行数の窓を新しい GM で全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 便 WR-PRE-PRESENCE（presence の時間回復・合図の配信・ADMINGAS の同期）: 前方で +0 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 WR-PRE-ADMINGAS-FIX1: 同長窓を全走査し唯一一致を再確認。本文・sha256・行位置は不変。
-    startLine: 7169, endLine: 7172,
+    // 2026-11-25 便 PLAYAT（参加予定時刻の事前設定: 集める仕事 availability_seed）: 前方で +342 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    startLine: 7511, endLine: 7514,
     sha256: '9e4206afcf1aa3579903b523eb55dde7ef7c5c4be9641a9f8a2224dbe3329c84',
     mirrorFile: 'src/stages/results.js',
     mirrorSignature: 'export function reconstructCanonicalRosterPayloads(blockNum, groups) {',
@@ -252,7 +262,8 @@ const MIRRORS = [
     // 2026-11-07 便 WR-E2E-S2-GMGROUP-FIX2（開始関門の待ちの終わりの道・警報の印の原因と配送の結果）: GM 前方で +46 行。旧 sha256 の同じ行数の窓を新しい GM で全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 便 WR-PRE-PRESENCE（presence の時間回復・合図の配信・ADMINGAS の同期）: 前方で +0 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 WR-PRE-ADMINGAS-FIX1: 同長窓を全走査し唯一一致を再確認。本文・sha256・行位置は不変。
-    startLine: 7205, endLine: 7206,
+    // 2026-11-25 便 PLAYAT（参加予定時刻の事前設定: 集める仕事 availability_seed）: 前方で +342 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    startLine: 7547, endLine: 7548,
     sha256: '6a41a1467ea787aa4dc9942ee15a46be57f83fa5e76eba6f09abca3c37a61f56',
     mirrorFile: 'src/stages/results.js',
     mirrorSignature: 'export function reconstructCanonicalRosterPayloads(blockNum, groups) {',
@@ -410,8 +421,9 @@ const MIRRORS = [
     // 2026-11-07 便 WR-E2E-S2-GMGROUP-FIX2（開始関門の待ちの終わりの道・警報の印の原因と配送の結果）: GM 前方で +53 行。旧 sha256 の同じ行数の窓を新しい GM で全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 便 WR-PRE-PRESENCE（presence の時間回復・合図の配信・ADMINGAS の同期）: 前方で +0 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 WR-PRE-ADMINGAS-FIX1: 同長窓を全走査し唯一一致を再確認。本文・sha256・行位置は不変。
-    startLine: 11580,
-    endLine: 11738,
+    // 2026-11-25 便 PLAYAT（参加予定時刻の事前設定: 集める仕事 availability_seed）: 前方で +349 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    startLine: 11929,
+    endLine: 12087,
     sha256: '320b6e967119dca5931207551995bdd3543d5a639feaec439f627fa3a269553e',
     // 🔴 F-7(b)-3（2026-08-08・ラウンド20 判断不要-7）: **逆方向**（ミラー側）も固定する。
     //   旧実装は正典側の行範囲しか見ていなかったので、ミラーの中身を
@@ -536,7 +548,8 @@ const MIRRORS = [
     // 2026-11-07 便 WR-E2E-S2-GMGROUP-FIX2（開始関門の待ちの終わりの道・警報の印の原因と配送の結果）: GM 前方で +56 行。旧 sha256 の同じ行数の窓を新しい GM で全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 便 WR-PRE-PRESENCE（presence の時間回復・合図の配信・ADMINGAS の同期）: 前方で +25 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 WR-PRE-ADMINGAS-FIX1: 同長窓を全走査し唯一一致を再確認。本文・sha256・行位置は不変。
-    startLine: 17003, endLine: 17128,
+    // 2026-11-25 便 PLAYAT（参加予定時刻の事前設定: 集める仕事 availability_seed）: 前方で +349 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    startLine: 17352, endLine: 17477,
     sha256: '1df9664d0e69182291d074fae90dff646eebe257ce47a6d3b07a72e4ba22060b',
     // 🔴 R26-C5（2026-08-13・ラウンド26）: **逆方向（ミラー側）が未固定だった。**
     //   `MIRRORS[0]`（mirrorRewardSplit）は F-7(b)-3 で両側を固定したのに、この行だけ
@@ -622,7 +635,8 @@ const MIRRORS = [
     // 2026-11-07 便 WR-E2E-S2-GMGROUP-FIX2（開始関門の待ちの終わりの道・警報の印の原因と配送の結果）: GM 前方で +57 行。旧 sha256 の同じ行数の窓を新しい GM で全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 便 WR-PRE-PRESENCE（presence の時間回復・合図の配信・ADMINGAS の同期）: 前方で +25 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 WR-PRE-ADMINGAS-FIX1: 同長窓を全走査し唯一一致を再確認。本文・sha256・行位置は不変。
-    startLine: 18326, endLine: 18332,
+    // 2026-11-25 便 PLAYAT（参加予定時刻の事前設定: 集める仕事 availability_seed）: 前方で +349 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    startLine: 18675, endLine: 18681,
     sha256: '8c0caf301712ae3b40201922a1810e04190e1199fb2f573ff4721199786022d6',
     mirrorFile: 'src/stages/grouping.js',
     mirrorSignature: 'function toPublishedShape(groups) {',
@@ -693,7 +707,8 @@ const MIRRORS = [
     // 2026-11-07 便 WR-E2E-S2-GMGROUP-FIX2（開始関門の待ちの終わりの道・警報の印の原因と配送の結果）: GM 前方で +57 行。旧 sha256 の同じ行数の窓を新しい GM で全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 便 WR-PRE-PRESENCE（presence の時間回復・合図の配信・ADMINGAS の同期）: 前方で +25 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 WR-PRE-ADMINGAS-FIX1: 同長窓を全走査し唯一一致を再確認。本文・sha256・行位置は不変。
-    startLine: 18338, endLine: 18348,
+    // 2026-11-25 便 PLAYAT（参加予定時刻の事前設定: 集める仕事 availability_seed）: 前方で +349 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    startLine: 18687, endLine: 18697,
     sha256: '46451a5b65b4a77861508ec844322cf4e47a0edd66776dc16b604841cf7a38ae',
     mirrorFile: 'src/stages/grouping.js',
     mirrorSignature: 'function countGroupsByLang(groups) {',
@@ -764,7 +779,8 @@ const MIRRORS = [
     // 2026-11-07 便 WR-E2E-S2-GMGROUP-FIX2（開始関門の待ちの終わりの道・警報の印の原因と配送の結果）: GM 前方で +57 行。旧 sha256 の同じ行数の窓を新しい GM で全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 便 WR-PRE-PRESENCE（presence の時間回復・合図の配信・ADMINGAS の同期）: 前方で +25 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 WR-PRE-ADMINGAS-FIX1: 同長窓を全走査し唯一一致を再確認。本文・sha256・行位置は不変。
-    startLine: 18352, endLine: 18358,
+    // 2026-11-25 便 PLAYAT（参加予定時刻の事前設定: 集める仕事 availability_seed）: 前方で +349 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    startLine: 18701, endLine: 18707,
     sha256: 'bb24b57c75500851c6d8751c2bb8b649a6f256e1cc1a3d92913c1f78aa39a8be',
     mirrorFile: 'src/stages/grouping.js',
     mirrorSignature: 'function getGroupSizeDistribution(groups) {',

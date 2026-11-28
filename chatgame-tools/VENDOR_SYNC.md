@@ -1,3 +1,8 @@
+> **2026-11-27 便 SIDES:** 組のメンバーでない人が見るチャットの左右の振り分けで、`ChatPhase.js` の前方に useMemo・prop・onRight の行を足した。ChatPhase の MIRROR の窓 `isTimestampVisible` は、旧 sha256 の同じ行数の窓を全走査した唯一一致の位置（1180-1183）へ行範囲を付け直した（中身は不変）。ほかの2窓（`hasVisibleConfirmedVote`・`chatSendBlockReason`）は足した行より前で動かない。復元のコードと dist は変えていない。
+> **2026-11-26 便 STAMPFIX:** スタンプの発言に返信・いいねの道具を出さない直しで、`ChatPhase.js` の発言の行の関数に2行を足した。ChatPhase の MIRROR の窓 `isTimestampVisible` は、旧 sha256 の同じ行数の窓を全走査した唯一一致の位置（1173-1176）へ行範囲を付け直した（中身は不変）。ほかの2窓（`hasVisibleConfirmedVote`・`chatSendBlockReason`）は足した行より前で動かない。復元のコードと dist は変えていない。
+> **2026-11-26 便 REPLY・STAMP（未コミット・スタンプは特許の確認でユーザーへ伺う）:** 発言へのスタンプの共有の形 `workers/game_workers/lib/reaction.js` を新しく COPY。ChatGameDO（`reaction` の口・init_response の `reactions`）と relay.js（`publishReaction`・`_handleReaction`）を正典から byte 同一で COPY。復元は verifyReaction を渡さないのでスタンプを読み飛ばす。MIRROR の窓は前方に足した行の分だけ付け直し、`chatSendBlockReason` は handleSend の返信の印の分を再レビューして窓と sha256 を付け直した。
+> **2026-11-25 便 VOIDKEEP:** void の発信（受領証明の無いまま10分を過ぎた発言・投票・密告）を消さずに半透明＋「無効」の札で残す表示の判定（確定したチャット窓の内だけ）と、送り手ごとの上限（正直な送信の上限の100件・半角1万字）を `src/utils/voidDisplay.js` に置き、byte 同一で COPY した（新規）。ChatPhase の MIRROR の窓3つ（`hasVisibleConfirmedVote`・`chatSendBlockReason`・`isTimestampVisible`）は、前方に足した import・prop の行の分だけ、旧 sha256 の同長全走査の唯一一致の位置へ行範囲を付け直した（中身は不変）。復元の `renderChatLog` はこれを import する。採点・受理・提出物・受領証明の行は変えていない。復元の dist を作り直した。
+> **2026-11-25 便 PLAYAT:** 参加予定時刻の事前設定（GM の集める仕事 `availability_seed`・ChatGameDO の受け取る口 `/seed-availability` と WS の印）を正典から byte 同一で COPY。採点・名簿・提出物の行は変えていない。GM・ChatGameDO を源とする MIRROR の窓は、旧 sha256 の同じ行数の窓を新しい正典で全走査し、各1か所だけ一致した位置へ行範囲だけを付け直した（本文と sha256 は据え置き）。COPY の sha256 を更新し、復元の dist を Node 22 の `npm run bundle` で作り直した。
 > **版 11 便 RL11（2026-11-23）:** 既定の Nostr リレーの一覧を5本から7本にした（`nos.lol`・`relay.primal.net`・`yabu.me`・`relay.satlantis.io`・`relay.angor.io`・`purplerelay.com`・`relay.ditto.pub`。ユーザーの決め・国ごとの到達と書き込みの実測で選んだ）。正典 `src/utils/relay.js` は `DEFAULT_RELAYS` とその上のコメントだけを変え、`vendor/src/utils/relay.js` へ byte-exact に COPY（sha256 `6809b449bbf4c1de1367e5ca4b0bf3f64f5d0a6972df6a5ab2ce415aca0ff882`）。復元の設定欄（`src/recovery/app.js`）は入力欄の行数を5から8にしただけ。記録は `docs/external-audit/RELEASE_CHECKLIST.md` の R5-RELAY1／R5-RELAY2 と `audit/relay-list-v11/`。
 > **2026-11-15 WR-PRE-ADMINGAS-FIX1:** GMの正常待ちからfee_cap_blockedを外した正典をbyte同一でCOPY。同じ行数の全GM MIRROR窓を旧sha256で全走査し、各1箇所に一致（行位置・本文・sha256は不変）。COPYのsha256を更新し、復元distを再生成した。ChatGameDOの写しは変更していない。
 > **2026-11-15 便 WR-PRE-PRESENCE:** presence の枠を容量120・30秒に1つ戻る形にし、不変activeの合図をuidごと60秒に1回まで配る ChatGameDO を正典から byte 同一で COPY。完了した WR-PRE-ADMINGAS の GM も同期した。対象の MIRROR は旧 sha256 の同長窓を全走査し、唯一一致の位置へ行範囲だけを付け直した。dist は Node 22 の既存 build/bundle.mjs で再生成する。
@@ -163,17 +168,17 @@ MIRROR 行は **正典ソースの該当行範囲**（1-indexed・両端含む�
 | `vendor/workers/game_workers/lib/canonical-json.js` | `workers/game_workers/lib/canonical-json.js` | `8d994e475947d94a6fb8ee2845cd7047e8efd7e05ab86d62ffe72090a04e341f` | COPY |
 | `vendor/workers/game_workers/lib/select-winners.js` | `workers/game_workers/lib/select-winners.js` | `04f9432845786255d21d488af3b84cb0cc09ac240610de9a6a6f6457154dd786` | COPY |
 | `vendor/workers/game_workers/lib/claim-data-codec.js` | `workers/game_workers/lib/claim-data-codec.js` | `41d5a1028bdb38e6ee4d3f89a3dc15cbc4d51544197664d23de2158fae97fcf0` | COPY |
-| `vendor/workers/game_workers/game-master-DO.js` | `workers/game_workers/game-master-DO.js` | `a609b66081ca688d0a04fe99530216d869ad329446b8b1b1eae359321cb19bec` | COPY |
+| `vendor/workers/game_workers/game-master-DO.js` | `workers/game_workers/game-master-DO.js` | `ea94fd3d7e0e68a4f151deba497af5c93f7d600f131d498426adb084129563c4` | COPY |
 | `vendor/workers/game_workers/lib/roster-anchor-rule.js` | `workers/game_workers/lib/roster-anchor-rule.js` | `182deb697a5162478af2fc136b41619199b5796677a67fc09d8096a6e0d04453` | COPY |
 | `vendor/workers/game_workers/lib/roster-canonical.js` | `workers/game_workers/lib/roster-canonical.js` | `03e771389271388cc3433f57e5bf8013830a451ad1c3fad741b052262bf6d0ce` | COPY |
-| `vendor/workers/game_workers/chat-game-DO.js` | `workers/game_workers/chat-game-DO.js` | `75a234d8759e2196335fa4d95096ce6b0a040d8c45ef2f24e1ccb342099b107b` | COPY |
+| `vendor/workers/game_workers/chat-game-DO.js` | `workers/game_workers/chat-game-DO.js` | `8e7327c6620a091ea34c4bfcafedc70d06c10afab7e837915ceec0146a6254fb` | COPY |
 | `vendor/workers/auth_workers/lib/cors.js` | `workers/auth_workers/lib/cors.js` | `bcfcfc13e854eafcc6636b74a1498e29d41fb6c210712987037c7b638ca3d296` | COPY |
 | `vendor/src/utils/protocol.js` | `src/utils/protocol.js` | `7e8c45913f7640ed7b542313c7071c8fbf3f6c407756408bd15734882f2724fd` | COPY |
 | `vendor/src/utils/ecies.js` | `src/utils/ecies.js` | `b52e8a64fc0d0dbbad0364ce4c2fe739a7167a70f6e06e55382271ec033f979d` | COPY |
 | `vendor/src/utils/evidence-trim-policy.js` | `src/utils/evidence-trim-policy.js` | `f6a3f7a37247d925fc64cdc2abf8c7a4ba78ea215db1972f1cc3cd2f09baf3e4` | COPY |
 | `vendor/src/utils/walletTools.js` | `src/utils/walletTools.js` | `864f708324d7a1cd328c63c03a2aed7e058a9c0dd3fd5788c02808a4d2c2c0c1` | COPY |
 | `vendor/src/utils/p2pKeys.js` | `src/utils/p2pKeys.js` | `79a10eb0e3196d1e04450356a346c8a73c5325242bfa3e592a65fc65f8cac56f` | COPY |
-| `vendor/src/utils/relay.js` | `src/utils/relay.js` | `6809b449bbf4c1de1367e5ca4b0bf3f64f5d0a6972df6a5ab2ce415aca0ff882` | COPY |
+| `vendor/src/utils/relay.js` | `src/utils/relay.js` | `7ba974c2f91d39d996e57d139b77a787511ed5fb798c7ccb76ed1d2fea529a45` | COPY |
 | `vendor/src/utils/priorityEvidence.js` | `src/utils/priorityEvidence.js` | `1740a73d4234f20b95c4c89a3dc86bd5f88f060e2ee4274c16769cd2dd837d35` | COPY |
 | `vendor/src/utils/receipt-warnings.js` | `src/utils/receipt-warnings.js` | `99daf5746e3c3284e0afe4fe8e07d2a473a67e84a26032872b9c5f8920b1c204` | COPY |
 | `vendor/src/utils/chainClock.js` | `src/utils/chainClock.js` | `802ea3c15b3f6efd4630a23578e44d9ce2770f1e87240874e800e7f6a4f5f43e` | COPY |
@@ -186,6 +191,8 @@ MIRROR 行は **正典ソースの該当行範囲**（1-indexed・両端含む�
 | `vendor/src/utils/reportGround.js` | `src/utils/reportGround.js` | `d6bd987407e25c55be07c7dba99808d8f1460dba56f8c2a069fb56618016a938` | COPY |
 | `vendor/src/utils/submissionGuarantee.js` | `src/utils/submissionGuarantee.js` | `de17bd5c67907c95bddcbf91a8c024e70bcf80e84cd4fb13c94ac4324c0aae93` | COPY |
 | `vendor/src/utils/trimGuaranteeCheck.js` | `src/utils/trimGuaranteeCheck.js` | `c81139cd32d42a2fe652cf7a85cef8372371a53da08316085299ef60816dca77` | COPY |
+| `vendor/src/utils/voidDisplay.js` | `src/utils/voidDisplay.js` | `3a32ba40e4985a639d5c2aacda1df7b55e9658e1b94bb28c7a06c949c6ffa603` | COPY |
+| `vendor/workers/game_workers/lib/reaction.js` | `workers/game_workers/lib/reaction.js` | `167fef1444fc2e526894fe9cd360e25e93297b27c4484dd53af0b0257aaeee97` | COPY |
 | `vendor/workers/game_workers/lib/service-binding.js` | `workers/game_workers/lib/service-binding.js` | `c5822b482a89a8cd5152d948cb1d134daf60011f3a0f1fdb34058c9021cee337` | COPY |
 | `vendor/workers/game_workers/lib/admin-tx-client.js` | `workers/game_workers/lib/admin-tx-client.js` | `e28a10df8cedb10943ae2d156756477beb2d1b76f5d85d8de17e7cf24b2def80` | COPY |
 | `vendor/workers/game_workers/lib/rpc-urls.js` | `workers/game_workers/lib/rpc-urls.js` | `f3d0bdb1e69b365a95bf11440a07acbbbc2754da83ba7b3a2607726af07d073b` | COPY |
@@ -274,14 +281,14 @@ MIRROR 行は **正典ソースの該当行範囲**（1-indexed・両端含む�
 
 | mirror | source range | sha256 | type |
 |---|---|---|---|
-| `vendor/workers/game_workers/game-master-DO.js publishAutoRosterFile` | `workers/game_workers/game-master-DO.js:16961-16970`（auto group0 の正準 writer） | `9580ed4dc1c7754e1d6c202b63527160393bcf5c84e8c2fef8e6a447888e02cd` | MIRROR |
+| `vendor/workers/game_workers/game-master-DO.js publishAutoRosterFile` | `workers/game_workers/game-master-DO.js:17310-17319`（auto group0 の正準 writer） | `9580ed4dc1c7754e1d6c202b63527160393bcf5c84e8c2fef8e6a447888e02cd` | MIRROR |
 | `src/recovery/bundle.js buildSubmissionBundle` | `src/components/game/SubmissionPhase.js:742-1485`（提出バンドルの組立。T4-3 の開始名簿・送信者確認はこの窓の外。D1b の提出窓判定は C。組み立ては `assembleSubmission`・`encodeSubmission` の2つの callback） | `8d3bdc1d69f10f9548716084bf6262102d0b59182150c590081935e85ad8496b` | MIRROR |
-| `src/recovery/relay-verify.js verifyRelayInner` | `src/hooks/useGameWebSocket.js:1111-1165`（inner署名検証・chat/action/presence/receipt。55行の中身は byte 同一） | `f0a85e6c5ff2edf6c339ce7a5c5e5621dba27b42f8cd11526c195bcfc91736cf` | MIRROR |
-| `src/recovery/app.js hasVisibleConfirmedVote` | `src/components/game/ChatPhase.js:267-279`（規則版数5の見える確定した投票とラスト10分の門。復元側の `hasVisibleConfirmedVote`・`canReportTarget`・純粋 helper `hasTimestampVisibleConfirmedVote` の3本を連結した hash） | `ee4215ec57745f108e5db9f6ff196ed74f70d9902312ad7e8a0a80041cef9a3e` | MIRROR |
-| `src/recovery/app.js chatSendBlockReason` | `src/components/game/ChatPhase.js:326-345`（`handleSend` の4ゲート＝可視内容 / 1メッセージ上限 / 発言数上限 / 総文字数上限。W3N と P2b-1b で前方の行だけ移動し、中身は byte 一致） | `bf087cc2fbcafbdba679cf35c2b8934ec1d6969c2ef1313751e934416011d592` | MIRROR |
-| `src/recovery/relay-client.js _verifyChat` | `src/hooks/useGameWebSocket.js:1168-1211`（`verifyIncomingMessage` の v2 経路。署名検証後に共有の未来印を照合・記録する） | `d09af814385d5ddb7d8e2cdb580dc1e7f42b16d18edcbc8faee5048597cb76ad` | MIRROR |
+| `src/recovery/relay-verify.js verifyRelayInner` | `src/hooks/useGameWebSocket.js:1118-1172`（inner署名検証・chat/action/presence/receipt。55行の中身は byte 同一） | `f0a85e6c5ff2edf6c339ce7a5c5e5621dba27b42f8cd11526c195bcfc91736cf` | MIRROR |
+| `src/recovery/app.js hasVisibleConfirmedVote` | `src/components/game/ChatPhase.js:282-294`（規則版数5の見える確定した投票とラスト10分の門。復元側の `hasVisibleConfirmedVote`・`canReportTarget`・純粋 helper `hasTimestampVisibleConfirmedVote` の3本を連結した hash） | `ee4215ec57745f108e5db9f6ff196ed74f70d9902312ad7e8a0a80041cef9a3e` | MIRROR |
+| `src/recovery/app.js chatSendBlockReason` | `src/components/game/ChatPhase.js:365-387`（`handleSend` の4ゲート＝可視内容 / 1メッセージ上限 / 発言数上限 / 総文字数上限。W3N と P2b-1b で前方の行だけ移動し、中身は byte 一致） | `385afcbfcf7bc432d6caf8b75597672b69f6bab7483e36136643ad8bd7e32712` | MIRROR |
+| `src/recovery/relay-client.js _verifyChat` | `src/hooks/useGameWebSocket.js:1175-1218`（`verifyIncomingMessage` の v2 経路。署名検証後に共有の未来印を照合・記録する） | `d09af814385d5ddb7d8e2cdb580dc1e7f42b16d18edcbc8faee5048597cb76ad` | MIRROR |
 | `src/recovery/discovery.js verifyLiveRosterAnchor` | `src/utils/roster-verification.js:204-423`（開始時に公開全組の実バイトを sha256 照合し、正本の C とチェーンの正典値を比較。復元側は `chain.js` に正典行選択を委譲。T1i で画面側の C 照合後の cache 保存と mismatch 時の破棄を再レビュー） | `3e6c955b73d1db93ffb84567f6ed27062536c8cba815a5a66758cd144e0b01e0` | MIRROR |
-| `src/recovery/app.js isTimestampVisible` | `src/components/game/ChatPhase.js:945-948`（未来 timestamp を端末時刻が厳密に超えるまで表示・カウントしない述語。W3N と P2b-1b で前方の行だけ移動し、中身は byte 一致） | `d094f4d3dc282229ddf76e8c5066c511304d97544e83cad26ec2bff7afb16473` | MIRROR |
+| `src/recovery/app.js isTimestampVisible` | `src/components/game/ChatPhase.js:1180-1183`（未来 timestamp を端末時刻が厳密に超えるまで表示・カウントしない述語。W3N と P2b-1b で前方の行だけ移動し、中身は byte 一致） | `d094f4d3dc282229ddf76e8c5066c511304d97544e83cad26ec2bff7afb16473` | MIRROR |
 | `vendor/workers/game_workers/game-master-DO.js publishAutoRosterFile` | `vendor/workers/game_workers/game-master-DO.js`（正準 writer の byte 固定） | `9580ed4dc1c7754e1d6c202b63527160393bcf5c84e8c2fef8e6a447888e02cd` | MIRROR-BODY |
 | `src/recovery/bundle.js buildSubmissionBundle` | `src/recovery/bundle.js`（ミラー本体） | `31e2bc39e85e82d5b40a4ae08557a0fe45ace5f605d2aad66ff6098fcea249e7` | MIRROR-BODY |
 | `src/recovery/relay-verify.js verifyRelayInner` | `src/recovery/relay-verify.js`（ミラー本体） | `b6a09ba571fd787d93fb271a2bc42f03d15d8bb2e796049175b0761e8ff2e1f9` | MIRROR-BODY |
@@ -335,6 +342,7 @@ P-2026-0842（投票・密告の平文を固定長パディング）でソース
 - COPY 対象の依存閉包:
   - `src/utils/submissionGuarantee.js` → `../../workers/game_workers/lib/{game-result-calculator,priority-fields,char-counter,evidence-compact-v1,protocol-v2}.js`・`./ecies.js`・`viem`（公式と復元の提出の区画で同じ要約）。
   - `src/utils/trimGuaranteeCheck.js` → `./submissionGuarantee.js`・`../../workers/game_workers/lib/{evidence-trim,protocol-v2}.js`（公式・救済・復元の切り詰めの確認で同じ比べ）。
+  - `src/utils/voidDisplay.js` → `./protocol.js`・`../../workers/game_workers/lib/char-counter.js`（公式のチャットの記録と復元の `renderChatLog` で、void の行を残す判定と送り手ごとの上限が同じ）。
   - `src/utils/relay.js` → `./p2pKeys.js`（vendor/src/utils/p2pKeys.js）・`./protocol.js`（vendor/src/utils/protocol.js）・
     `../../workers/game_workers/lib/protocol-v2.js`（vendor/workers/…）・
     `../../workers/game_workers/lib/char-counter.js`（vendor/workers/…）・

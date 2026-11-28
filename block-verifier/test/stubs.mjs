@@ -14,7 +14,11 @@ export function makeStorage() {
   const map = new Map();
   let alarmAt = null;
   return {
-    async get(key) { return map.has(key) ? map.get(key) : undefined; },
+    // 本番DO同様、配列のマルチキーgetは「ある鍵だけの Map」を返す（2026-11-26 便 LIKE: init のいいねの一覧が使う）
+    async get(key) {
+      if (Array.isArray(key)) return new Map(key.filter((k) => map.has(k)).map((k) => [k, map.get(k)]));
+      return map.has(key) ? map.get(key) : undefined;
+    },
     // 本番DO同様、オブジェクト形式のマルチキーput（同一トランザクション書込）も受け付ける
     // （A3 の phase_task_queue + phase_task_active 同時書込が使用）
     async put(key, value) {

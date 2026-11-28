@@ -128,6 +128,8 @@ const TIMELINE_NO_GAME_INVALIDATED_STATUS = 'invalidated_no_game';
 const TIMELINE_NO_GAME_CANCELLED_TASK_TYPES = new Set([
   'grace_reconcile', 'phase_transition', 'init_chat_games', 'roster_anchor',
   'grouping_watchdog', 'phase_shard_update',
+  // 便 PLAYAT（2026-11-25）: 参加予定時刻を集める後追いの仕事。ゲームの無いブロックには渡す先が無い。
+  'availability_seed',
 ]);
 const RANDAO_ANCHOR_BLOCKHASH_WINDOW_DEFAULT = 256n;
 const ETHEREUM_BLOCK_TIME_MS = 12_000;
@@ -312,6 +314,49 @@ const calcRetryDelayMs = (failures) =>
 // 「60秒以内は実行対象」窓より長くする（同一alarm内での即時スピンを避け、次のalarmに委ねる）
 const PHASE_TASK_MAX_ATTEMPTS = 20;
 const PHASE_TASK_RETRY_DELAY_MS = 90000;
+// 便 PLAYAT（2026-11-25・ユーザー決定）: 参加予定時刻（playAt）を集める後追いの仕事 `availability_seed`。
+// 利用者の行（users.entry_blocks[N].playAt）から読み、各グループの ChatGameDO（/seed-availability）へ渡す。
+// 表示だけの値（署名なし・採点に無関係）なので、この仕事は**本線を1つも止めない**形にする:
+//   ・実行中の印（phase_task_active）を使わない・park しない・警報を出さない・保存の鍵を足さない
+//     （状態は仕事のオブジェクトの cursor / attempts だけ。途中で消えたら、その回は集めないだけ）。
+//   ・1回の実行で読むチャンクは 20 まで（Service Binding の上限 SB_MAX_CALLS_PER_INVOCATION=30 の内）。
+//     ChatGameDO への呼び出しは 900 まで（D1 1 + 読み 20 + 900 < WORKER_SUBREQUEST_LIMIT）。
+//     当選の上限 2,100人では最大 700 組なので、この上限は実際には効かない（規模が変わったときの防波堤）。
+//   ・1回の実行が alarm を占める時間を 20 秒で見切る。alarm のループは1本で、phase_transition は
+//     60 秒を超えて遅れると grace の自動延長へ入る。集める仕事の遅い fetch で、その線を越えさせない。
+//   ・仕事そのものの失敗（D1 の読みなど）は 3 回まで PHASE_TASK_RETRY_DELAY_MS 後に同じ cursor でやり直し、
+//     超えたらログを出してやめる（参加予定時刻が画面に出ないだけで、ゲームは変わらない）。
+//   ・すぐ後ろに「時刻に意味のある仕事」が控えているときは、走らずに後ろへ回す（反証 PA-R01・PA-R06・Lean PA-L01）。
+//     この仕事が alarm の先頭で走ると、その間に期限の来る仕事（とくに waiting→chatting の phase_transition）は
+//     「実行の時間（最大 AVAILABILITY_SEED_RUN_BUDGET_MS）＋ alarm の張り直しの 5 秒」待たされる。
+//     キューの残りで、譲る相手の種類（AVAILABILITY_SEED_YIELD_TO_TASK_TYPES）の最も早い時刻が「今＋その長さ」以内なら、
+//     fetch を1本も出さずにその仕事の時刻の 5 秒後へ回す。見るのはキューから外した時点の残りだけ
+//     （実行の途中で足される仕事までは守らない）。
+//   ・回した回数（同じ alarm で先に別の仕事が動いていた回も含む）は仕事のオブジェクトの deferrals に数え、
+//     走った回・続き・やり直しでも持ち越す。60 回を超えたらログを出してやめる（Lean PA-L02＝別の仕事が
+//     来続けても、この仕事の鎖が有限で終わるように）。やめるときも印・park・警報・保存の鍵は無い。
+const AVAILABILITY_SEED_CHUNKS_PER_RUN = 20;
+const AVAILABILITY_SEED_MAX_ATTEMPTS = 3;
+const AVAILABILITY_SEED_ENQUEUE_DELAY_MS = 60000;
+const AVAILABILITY_SEED_CONTINUE_DELAY_MS = 1000;
+const AVAILABILITY_SEED_MAX_GROUP_CALLS_PER_RUN = 900;
+const AVAILABILITY_SEED_RUN_BUDGET_MS = 20000;
+// alarm のループは、期限を過ぎた仕事へ「今＋5秒」で張り直す（armEarliestQueuedTask(5000)）。その分。
+const AVAILABILITY_SEED_REARM_ALLOWANCE_MS = 5000;
+// 譲った相手の仕事の時刻から、この仕事を置き直す先までの間。
+const AVAILABILITY_SEED_YIELD_DELAY_MS = 5000;
+const AVAILABILITY_SEED_MAX_DEFERRALS = 60;
+// 集める仕事が譲る相手の種類（反証 PA-R08）。宣言の時刻か、開始の関門に関わる仕事だけに絞る:
+//   phase_transition（宣言の時刻のフェーズ遷移）・roster_anchor（名簿の登録と開始の予約）・
+//   init_chat_games（ChatGameDO の初期化のやり直し）・grace_reconcile（宣言 grace の照合）・
+//   grouping_watchdog（グループ分けのリースの見張り）。
+// ほかの種類（calc_chunk・phase_shard_update・shard_cleanup・post_commit_zkp）は、続きを何度でも取り直せる仕事で、
+// 最大「実行の時間＋5秒」の遅れに害が無い。これらにも譲ると、集計の最中のように 25 秒以下の間隔で来続ける間
+// じゅう回り続け、上限でやめてしまう（そのブロックの全組で、先に入れた値が渡らない＝譲る直しの前には無かった失敗）。
+// この一覧に無い種類（将来足す種類を含む）には譲らない。時刻に意味のある種類を足すときは、ここにも足す。
+const AVAILABILITY_SEED_YIELD_TO_TASK_TYPES = new Set([
+  'phase_transition', 'roster_anchor', 'init_chat_games', 'grace_reconcile', 'grouping_watchdog',
+]);
 // A6: グループ分けのリース。'started'クレームはこの期限内のみ有効で、各フェーズ境界の
 // 進捗書き込みで延長される。期限切れ＝前回実行の途中死とみなし、watchdog/再呼び出しが
 // 乗っ取って再実行する（2100人級で最長のフェーズ（シャード書き込み・チャット初期化）でも
@@ -5320,7 +5365,9 @@ export class GameMasterDO {
             `[timeline-no-game] skipping stale ${currentTask.type} task for block ${currentTask.blockNum} `
             + `(cleanup=${noGameCleanup.status})`
           );
-          await this.storage.delete('phase_task_active');
+          // 便 PLAYAT: availability_seed は実行中の印を書かない。ここでも印に触れない
+          // （復活の走査が読めなかった回に残っている、ほかの仕事の印を消さないため）。
+          if (currentTask.type !== 'availability_seed') await this.storage.delete('phase_task_active');
           if (currentTask.type === 'grouping_watchdog' || currentTask.type === 'roster_anchor'
               || currentTask.type === 'phase_shard_update') {
             tasksExecuted = maxContinuousExecution;
@@ -5673,6 +5720,33 @@ export class GameMasterDO {
             tasksExecuted = maxContinuousExecution;
             break;
           }
+          case 'availability_seed': {
+            // 便 PLAYAT（2026-11-25）: 参加予定時刻を集める後追いの仕事。表示だけの値なので、
+            // 何が起きても alarm のループへ例外を出さない（次の仕事と final setAlarm を止めない）。
+            // 実行中の印（phase_task_active）は使わない＝ここで消さない（ほかの仕事の印に触れない）。
+            // 同じ alarm で先に別の仕事が動いていたら、fetch の予算を分け合わずに次の alarm へ回す。
+            // すぐ後ろに時刻に意味のある仕事（フェーズの遷移・開始の関門）が控えているときも、走らずに後ろへ回す
+            // （キューから外した後の残り taskQueue を渡す。保存は読み直さない）。
+            let seedIdle = false;
+            try {
+              const seedOutcome = await this.driveAvailabilitySeedTask(currentTask, {
+                sharedInvocation: tasksExecuted > 1, queuedBehind: taskQueue,
+              });
+              seedIdle = seedOutcome?.idle === true;
+            } catch (e) {
+              try {
+                console.warn(`[availability-seed] block ${currentTask.blockNum}: dropped (${String(e?.message || e)})`);
+              } catch (logError) { /* ログの失敗でも alarm を止めない */ }
+            }
+            if (seedIdle) {
+              // 回した・やめただけで fetch を1本も出していない。この alarm の枠を使わず、後ろの仕事を今までどおり
+              // 同じ alarm で続ける（回した仕事の時刻は今より後なので、この alarm でもう一度取り出すことは無い）。
+              tasksExecuted--;
+              break;
+            }
+            tasksExecuted = maxContinuousExecution; // 読みと配りの予算をほかの仕事と混ぜない
+            break;
+          }
           default:
             console.warn(`Unknown task type: ${currentTask.type}`);
         }
@@ -5756,6 +5830,274 @@ export class GameMasterDO {
       await this.storage.put('phase_task_queue', q);
     }
     await this.armEarliestQueuedTask();
+  }
+
+  // ============================================================
+  // 便 PLAYAT（2026-11-25・ユーザー決定）: 参加予定時刻を集める後追いの仕事（availability_seed）
+  // エントリーの時・マイページで先に入れた参加予定時刻（users.entry_blocks[N].playAt）を、
+  // ChatGameDO の初期化の後で書き込みワーカーの読む口（/read-play-schedule）から集め、
+  // グループごとに ChatGameDO（/seed-availability）へ渡す。表示だけの値（署名なし・採点に無関係）。
+  // 🔴 この仕事の失敗で、グループ分け・ChatGameDO の初期化・名簿の登録・フェーズの遷移・集計を
+  //    1つも変えない。実行中の印・park・警報・保存の鍵を持たない（刻みの定数の所の説明を参照）。
+  // ============================================================
+
+  // initChatGames の成功の出口（初回と、全行 waiting での再入）から呼ぶ登録。投げない。
+  // 同じブロックの仕事がキューにあれば重ねて入れない（enqueuePhaseTask の決まり）。
+  // 何度登録されても、ChatGameDO は一度渡した uid・本人が触った uid に二度と入れないので害は無い。
+  async enqueueAvailabilitySeedBestEffort(blockNum) {
+    try {
+      await this.enqueuePhaseTask({
+        type: 'availability_seed', blockNum,
+        executeAt: Date.now() + AVAILABILITY_SEED_ENQUEUE_DELAY_MS, cursor: 0, attempts: 0,
+      });
+    } catch (seedError) {
+      try {
+        console.warn(`[availability-seed] block ${blockNum}: enqueue failed (${String(seedError?.message || seedError)}) — chat init is unaffected`);
+      } catch (logError) { /* ログの失敗でも初期化を止めない */ }
+    }
+  }
+
+  // alarm の case から呼ぶ入口。1回ぶんを実行し、続き・やり直しの登録までを行う。
+  // 状態は仕事のオブジェクトの cursor（次に読むチャンク）・attempts（仕事そのものが投げた回数）・
+  // deferrals（走らずに後ろへ回した回数）だけ。どれも鎖の全体で持ち越す＝鎖は有限で終わる
+  // （走れば cursor が進むか attempts が増え、走らなければ deferrals が増える。3つとも上限がある）。
+  // 戻り値の idle:true は「fetch を1本も出していない」。alarm の case はその回の枠を返す。
+  async driveAvailabilitySeedTask(task, { sharedInvocation = false, queuedBehind = null } = {}) {
+    const rawBlockNum = task?.blockNum;
+    const blockNum = typeof rawBlockNum === 'number' ? rawBlockNum
+      : (typeof rawBlockNum === 'string' && /^\d{1,15}$/.test(rawBlockNum) ? Number(rawBlockNum) : Number.NaN);
+    if (!Number.isSafeInteger(blockNum) || blockNum < 0) {
+      console.warn(`[availability-seed] dropped: invalid block ${String(rawBlockNum)}`);
+      return { state: 'dropped', reason: 'invalid_block', idle: true };
+    }
+    const cursor = Number.isSafeInteger(task?.cursor) && task.cursor >= 0 ? task.cursor : 0;
+    const attempts = Number.isSafeInteger(task?.attempts) && task.attempts >= 0 ? task.attempts : 0;
+    const deferrals = Number.isSafeInteger(task?.deferrals) && task.deferrals >= 0 ? task.deferrals : 0;
+    const requeueAt = (fields, executeAt) => this.enqueuePhaseTask({
+      type: 'availability_seed', blockNum, cursor, attempts, deferrals, ...fields, executeAt,
+    });
+
+    // キューの残りで、譲る相手の種類（宣言の時刻・開始の関門に関わる仕事）の最も早い時刻。
+    // その種類で時刻の読めない仕事は、alarm のループが「期限が来ている」と扱う（`executeAt > now` が偽）
+    // ので、ここでも今と同じに数える。一覧の外の種類は、時刻が読めても読めなくても譲る理由にしない
+    // （集計の続きなどに譲り続けて、上限でやめないため。ほかのブロックの availability_seed も一覧の外＝
+    // 集める仕事どうしで譲り合って止まらない）。
+    const nowMs = Date.now();
+    let nextOtherAt = null;
+    for (const queued of (Array.isArray(queuedBehind) ? queuedBehind : [])) {
+      if (!queued || !AVAILABILITY_SEED_YIELD_TO_TASK_TYPES.has(queued.type)) continue;
+      const queuedAt = Number.isFinite(Number(queued.executeAt)) ? Number(queued.executeAt) : nowMs;
+      if (nextOtherAt === null || queuedAt < nextOtherAt) nextOtherAt = queuedAt;
+    }
+    // この仕事が今から走ると、その仕事は最悪で「実行の時間の上限＋張り直しの分」待つ。その内にあるなら譲る。
+    const yieldToOther = nextOtherAt !== null
+      && nextOtherAt <= nowMs + AVAILABILITY_SEED_RUN_BUDGET_MS + AVAILABILITY_SEED_REARM_ALLOWANCE_MS;
+
+    if (sharedInvocation || yieldToOther) {
+      // 走らずに後ろへ回す（fetch を1本も出さない）:
+      //   ・同じ alarm で先に別の仕事（フェーズの遷移・初期化）が動いた → fetch の予算
+      //     （Service Binding 30・サブリクエスト 1000）を分け合わないよう、次の alarm へ。
+      //   ・すぐ後ろに時刻に意味のある仕事が控えている → その仕事の時刻の少し後へ。
+      // 回した回数には上限を置く。そういう仕事が来続ける間は、いつまでも回さずにやめる。
+      const nextDeferrals = deferrals + 1;
+      if (nextDeferrals > AVAILABILITY_SEED_MAX_DEFERRALS) {
+        console.warn(`[availability-seed] block ${blockNum}: giving up at chunk ${cursor} after ${deferrals} deferrals (other tasks kept coming)`);
+        return { state: 'gave_up', reason: 'deferrals', idle: true, cursor, attempts, deferrals };
+      }
+      const executeAt = yieldToOther
+        ? Math.max(nowMs, nextOtherAt) + AVAILABILITY_SEED_YIELD_DELAY_MS
+        : nowMs + AVAILABILITY_SEED_CONTINUE_DELAY_MS;
+      await requeueAt({ deferrals: nextDeferrals }, executeAt);
+      return {
+        state: 'deferred', reason: yieldToOther ? 'other_task_near' : 'shared_invocation', idle: true,
+        cursor, attempts, deferrals: nextDeferrals, executeAt,
+      };
+    }
+
+    let outcome;
+    try {
+      outcome = await this.runAvailabilitySeedTask({ blockNum, cursor });
+    } catch (e) {
+      // 仕事そのものの失敗（D1 の読みなど）。同じ cursor でやり直し、決めた回数を超えたらやめる。
+      const failedAttempts = attempts + 1;
+      const detail = this.availabilitySeedErrorText(e);
+      if (failedAttempts > AVAILABILITY_SEED_MAX_ATTEMPTS) {
+        console.warn(`[availability-seed] block ${blockNum}: giving up at chunk ${cursor} after ${failedAttempts} failed attempts: ${detail}`);
+        return { state: 'gave_up', reason: 'attempts', cursor, attempts: failedAttempts, deferrals };
+      }
+      console.warn(`[availability-seed] block ${blockNum}: failed at chunk ${cursor} (attempt ${failedAttempts}): ${detail} — retrying in ${PHASE_TASK_RETRY_DELAY_MS / 1000}s`);
+      await requeueAt({ attempts: failedAttempts }, Date.now() + PHASE_TASK_RETRY_DELAY_MS);
+      return { state: 'retry', cursor, attempts: failedAttempts, deferrals };
+    }
+
+    const line = `[availability-seed] block ${blockNum}: chunks ${cursor}-${outcome.nextCursor}/${outcome.totalChunks} `
+      + `read=${outcome.chunksRead} readFailed=${outcome.chunkFailures} partial=${outcome.partialChunks} `
+      + `values=${outcome.values} rejected=${outcome.rejectedValues} `
+      + `groups=${outcome.groupsSent} groupFailed=${outcome.groupFailures} groupSkipped=${outcome.groupsSkipped} `
+      + `applied=${outcome.applied} done=${outcome.done}`;
+    if (outcome.chunkFailures > 0 || outcome.groupFailures > 0 || outcome.groupsSkipped > 0) {
+      console.warn(`${line} firstFailure=${outcome.firstFailure || 'none'}`);
+    } else {
+      console.log(line);
+    }
+    if (!outcome.done) {
+      await requeueAt({ cursor: outcome.nextCursor }, Date.now() + AVAILABILITY_SEED_CONTINUE_DELAY_MS);
+      return { state: 'continued', attempts, deferrals, ...outcome };
+    }
+    return { state: 'done', attempts, deferrals, ...outcome };
+  }
+
+  // ログに載せる失敗の理由。1行・200字までにし、URL と secret らしい所は既存の伏せ方で伏せる。
+  // 理由を文字にできない値を投げられても、ここからは投げない（失敗を数える側を止めないため）。
+  availabilitySeedErrorText(error) {
+    try {
+      return this.observationErrorText(error).replace(/\s+/g, ' ').slice(0, 200);
+    } catch (textError) {
+      return 'unprintable error';
+    }
+  }
+
+  // 1回ぶんの実行。仕事そのものの失敗（D1 の読み）は throw する（呼び手が attempts を数える）。
+  // チャンクごと・グループごとの失敗は数えるだけで次へ進む（古い書き込みワーカー・古い ChatGameDO の
+  // 404 もここに入る＝片側だけ新しくても落ちない）。
+  async runAvailabilitySeedTask(task) {
+    const blockNum = task?.blockNum;
+    if (!Number.isSafeInteger(blockNum) || blockNum < 0) throw new Error('availability seed: invalid block');
+    const cursor = Number.isSafeInteger(task?.cursor) && task.cursor >= 0 ? task.cursor : 0;
+    const db = this.env.BITCOINU_DATA;
+    if (!db) throw new Error('BITCOINU_DATA binding not found');
+
+    // この実行の残り時間で待ちを見切る。読みと配りの work は「投げずに値を返す」関数にする
+    // （名簿の D1 の読みだけは投げてよい＝呼び手が attempts を数える）。
+    // 見切った fetch の結果は使わない（遅れて届いても捨てる）。時間切れの後に始まる分は fetch しない。
+    const deadlineAt = Date.now() + AVAILABILITY_SEED_RUN_BUDGET_MS;
+    const timedOut = { ok: false, reason: 'run budget exhausted' };
+    const bounded = (work) => {
+      const remainingMs = deadlineAt - Date.now();
+      if (remainingMs <= 0) return Promise.resolve(timedOut);
+      let timer = null;
+      return Promise.race([
+        Promise.resolve().then(work),
+        new Promise((resolve) => { timer = setTimeout(() => resolve(timedOut), remainingMs); }),
+      ]).finally(() => { if (timer !== null) clearTimeout(timer); });
+    };
+
+    // 1. 名簿（D1 の game_groups）から uid → グループを作る。uid は数字だけの文字列に限る。
+    const groupRead = await bounded(async () => ({
+      ok: true,
+      rows: (await db.prepare(
+        'SELECT group_id, members FROM game_groups WHERE block_num = ? ORDER BY group_id'
+      ).bind(blockNum).all())?.results,
+    }));
+    if (groupRead === timedOut) throw new Error('game_groups read timed out');
+    const uidToGroup = new Map();
+    const rows = [];
+    for (const row of (Array.isArray(groupRead.rows) ? groupRead.rows : [])) {
+      const rawGroupId = row?.group_id;
+      const groupId = typeof rawGroupId === 'number' ? rawGroupId
+        : (typeof rawGroupId === 'string' && /^\d{1,15}$/.test(rawGroupId) ? Number(rawGroupId) : Number.NaN);
+      if (!Number.isSafeInteger(groupId) || groupId < 0) continue;
+      let members;
+      try { members = JSON.parse(row.members); } catch (e) { members = null; }
+      if (!Array.isArray(members)) continue;
+      for (const member of members) {
+        const rawUid = member?.uid;
+        const uid = typeof rawUid === 'string' ? rawUid
+          : (Number.isSafeInteger(rawUid) ? String(rawUid) : '');
+        // 同じ uid が2つの組にあれば、先の組だけを使う（どちらへ渡すかを応答に決めさせない）。
+        if (!/^\d{1,20}$/.test(uid) || uidToGroup.has(uid)) continue;
+        uidToGroup.set(uid, groupId);
+        rows.push({ uid });
+      }
+    }
+
+    // 2. 書き込みワーカーごと・100人ごとのチャンク（順は決定的＝cursor が実行をまたいで同じ所を指す）。
+    const chunks = this.buildShardWriteChunks(rows);
+    const totalChunks = chunks.length;
+    const nextCursor = Math.min(totalChunks, cursor + AVAILABILITY_SEED_CHUNKS_PER_RUN);
+    const summary = {
+      done: nextCursor >= totalChunks, nextCursor, totalChunks,
+      chunksRead: 0, chunkFailures: 0, partialChunks: 0, values: 0, rejectedValues: 0,
+      groupsSent: 0, groupFailures: 0, groupsSkipped: 0, applied: 0, firstFailure: null,
+    };
+    if (cursor >= totalChunks) return summary;
+
+    // 3. cursor から決めた数だけ読む。応答は信じすぎない: 頼んだ uid（名簿）の、正の安全な整数だけを使う。
+    //    部分的に読めた応答（success:false）も、読めた値は使う。
+    const readOutcomes = await Promise.all(chunks.slice(cursor, nextCursor).map((chunk) => bounded(async () => {
+      try {
+        const uids = chunk.members.map((member) => member.uid);
+        const response = await requireBinding(this.env, writeWorkerBinding(chunk.workerIndex)).fetch(
+          internalJsonRequest('/read-play-schedule', { block_num: blockNum, uids }, this.env.API_SECRET)
+        );
+        if (response?.status !== 200) return { ok: false, reason: `read HTTP ${response?.status}` };
+        const data = await response.json();
+        const values = data?.values;
+        if (values === null || typeof values !== 'object' || Array.isArray(values)) {
+          return { ok: false, reason: 'read values is not an object' };
+        }
+        const picked = [];
+        let rejected = 0;
+        for (const uid of uids) {
+          if (!Object.hasOwn(values, uid)) continue;
+          const value = values[uid];
+          if (Number.isSafeInteger(value) && value > 0) picked.push([uid, value]);
+          else rejected++;
+        }
+        return { ok: true, partial: data.success !== true, picked, rejected };
+      } catch (e) {
+        return { ok: false, reason: `read ${this.availabilitySeedErrorText(e)}` };
+      }
+    })));
+    const byGroup = new Map();
+    for (const outcome of readOutcomes) {
+      if (!outcome?.ok) {
+        summary.chunkFailures++;
+        if (!summary.firstFailure) summary.firstFailure = String(outcome?.reason || 'read failed');
+        continue;
+      }
+      summary.chunksRead++;
+      if (outcome.partial) summary.partialChunks++;
+      summary.rejectedValues += outcome.rejected;
+      for (const [uid, value] of outcome.picked) {
+        const groupId = uidToGroup.get(uid);
+        if (groupId === undefined) continue;
+        if (!byGroup.has(groupId)) byGroup.set(groupId, {});
+        byGroup.get(groupId)[uid] = value;
+        summary.values++;
+      }
+    }
+
+    // 4. 値が1つ以上あるグループだけへ渡す。窓の内か・本人の操作を上書きしないかは ChatGameDO が決める。
+    const targets = [...byGroup.entries()].sort((a, b) => a[0] - b[0]);
+    const sendable = targets.slice(0, AVAILABILITY_SEED_MAX_GROUP_CALLS_PER_RUN);
+    summary.groupsSkipped = targets.length - sendable.length;
+    const seedOutcomes = await this.batchChatDoCalls(sendable, ([groupId, availability]) => bounded(async () => {
+      try {
+        const doId = this.env.CHAT_GAME_DO.idFromName(`${blockNum}-${groupId}`);
+        const response = await this.env.CHAT_GAME_DO.get(doId).fetch(this.chatDoRequest('/seed-availability', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ availability }),
+        }));
+        if (response?.status !== 200) return { ok: false, reason: `seed HTTP ${response?.status}` };
+        const body = await response.json();
+        if (body?.success !== true) return { ok: false, reason: 'seed not accepted' };
+        return { ok: true, applied: Number.isSafeInteger(body.applied) && body.applied > 0 ? body.applied : 0 };
+      } catch (e) {
+        return { ok: false, reason: `seed ${this.availabilitySeedErrorText(e)}` };
+      }
+    }));
+    for (const outcome of seedOutcomes) {
+      if (!outcome?.ok) {
+        summary.groupFailures++;
+        if (!summary.firstFailure) summary.firstFailure = String(outcome?.reason || 'seed failed');
+        continue;
+      }
+      summary.groupsSent++;
+      summary.applied += outcome.applied;
+    }
+    return summary;
   }
 
   // S3-003: reset-block の持ち越しぶんを、1リクエストにつき上限以下ずつ処理する。
@@ -7837,6 +8179,9 @@ export class GameMasterDO {
         }
         const scheduled = await this.scheduleChatWhenAllGroupsReady(blockNum);
         if (scheduled?.ready) {
+          // 便 PLAYAT（2026-11-25）: 初回の出口が waiting への更新の後・登録の前で途切れた回にも、
+          // 参加予定時刻を集める仕事が1度は登録されるようにする（投げない・戻り値を変えない）。
+          await this.enqueueAvailabilitySeedBestEffort(blockNum);
           return {
             success: true,
             blockNum,
@@ -8047,6 +8392,10 @@ export class GameMasterDO {
       // 全 DO と group sha に加え、別 invocation の manifest/anchor が確定するまで
       // 開始タスクを張らない。遅着時の grace は共通の予約点で解決する。
       await this.scheduleChatWhenAllGroupsReady(blockNum);
+      // 便 PLAYAT（2026-11-25）: 全組の初期化が済んだ後で、参加予定時刻を集める後追いの仕事を登録する
+      // （エントリーの時・マイページで先に入れた値を、待機中の画面に出すため）。表示だけの値なので、
+      // 登録の失敗で初期化の戻り値と後続（名簿の登録・開始の予約）を1つも変えない。
+      await this.enqueueAvailabilitySeedBestEffort(blockNum);
     }
 
     console.log(`ChatGameDO initialization: ${initialized} success, ${alreadyInitialized} already-initialized, ${errors} errors (${rosterShaMissingCount} roster sha missing)`);

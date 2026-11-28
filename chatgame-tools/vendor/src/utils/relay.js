@@ -24,6 +24,7 @@ import {
 //    （`src/hooks/useGameWebSocket.js:23` と同じ流儀）。
 import { isCanonicalTimestamp, isCanonicalSignature, receiptArrivalContainment, mergeActionReceiptSources, receiptCoverClaim, buildRealTargets } from '../../workers/game_workers/lib/protocol-v2.js';
 import { GUEST_PINNED_RULES, countHalfWidthChars } from '../../workers/game_workers/lib/char-counter.js';
+import { isReactionShape, pickReaction } from '../../workers/game_workers/lib/reaction.js';
 import { deriveNostrKey, isValidNostrPubkey } from './p2pKeys.js';
 export { deriveNostrKey } from './p2pKeys.js';
 
@@ -73,9 +74,31 @@ export const QUIESCENCE_MS = Number(process.env.NEXT_PUBLIC_P2P_QUIESCENCE_MS ||
 // 在席通知と出し直し）の上。正直な多弁での誤検知を避ける。
 const PER_PUBKEY_EVENT_CAP = 1200;
 
-// 名簿の最大5鍵が per-pubkey 上限へ到達した場合（上限超過を確定する各1件を含む）も、
+// 便 LIKE（2026-11-26）: いいね（表示だけ）の封筒は上の数えに入れず、送り手ごとに別の上限で数える。
+// いいねを多く押しても、氾濫の警告（密告の推奨）にも、発言・既読・投票の上限にもかからない。上限の後のいいねだけを捨てる。
+// 正直な画面は（発言, 種類）ごとに最後の状態だけを間をあけて送る（useGameWebSocket の sendReaction）。
+const PER_PUBKEY_REACTION_CAP = 300;
+// いいねの封筒は、グループのタグとは別のタグ（reactionTagOf）だけを付けて出す（反証 RS2-R01）。いいねを知らない古い版の画面は
+// グループのタグだけを購読するので、いいねの封筒を受け取らず、自分の数え（氾濫の警告・上限）にも入れない。
+// 新しい版は両方のタグを購読し、数えの振り分けはタグ（署名に覆われる）で決め、中身の種類と食い違う封筒は捨てる（_handleEvent）。
+// 両方のタグを付けた封筒はいいねとして扱わない（中身がいいねなら捨てる）。
+// 出したいいねの数（ゲームの身元ごと・頁の間ずっと）。publishReaction だけが使う
+const REACTION_PUBLISH_COUNTS = new Map();
+export function reactionTagOf(tag) {
+  return `${tag}:like`;
+}
+function hasGroupTag(ev, value) {
+  return Array.isArray(ev?.tags) && ev.tags.some((t) => Array.isArray(t) && t[0] === 't' && t[1] === value);
+}
+export function isReactionEnvelope(ev, tag) {
+  return hasGroupTag(ev, reactionTagOf(tag)) && !hasGroupTag(ev, tag);
+}
+
+// 名簿の最大5鍵が per-pubkey 上限（いいねの上限を含む）へ到達した場合（上限超過を確定する各1件〈鍵ごとに2つ〉を含む）も、
 // 全イベントidを保持できる。組の外の鍵は記憶に入らない。
-export const MAX_SEEN_EVENT_IDS = PER_PUBKEY_EVENT_CAP * 5 + 5;
+export const MAX_SEEN_EVENT_IDS = (PER_PUBKEY_EVENT_CAP + PER_PUBKEY_REACTION_CAP) * 5 + 10;
+// 履歴の1ページの limit は、いいねの前の値（確かめ済みの既定のリレーの読み戻しの値）のまま（反証 RS2-R08）。
+const PRE_LIKE_SEEN_EVENT_IDS = PER_PUBKEY_EVENT_CAP * 5 + 5;
 
 // 第12ラウンド 決定3: 受領証明は発行者（receiverUid）ごとに生の枚数を制限する。
 // 正当なカバー先の理論上限480に対し、未測定の正当な発行形へ46%の余裕を持たせた値。
@@ -1567,10 +1590,11 @@ const RECONNECT_BASE_MS = 3000;
 const RECONNECT_MAX_MS = 60000;
 // 履歴は現在のライブ購読とは別の REQ で過去へ送る。リレーが limit を縮めても
 // 境界秒を再要求する。履歴のページ数は接続ごとに制限する。
-const HISTORY_PAGE_LIMIT = MAX_SEEN_EVENT_IDS;
+export const HISTORY_PAGE_LIMIT = PRE_LIKE_SEEN_EVENT_IDS;
 const MARKED_ID_REQUEST_SIZE = 100;
 // 最小 limit=1 のリレーでも、新規 id 1件と境界秒の重複だけの1ページを各件に許す。
 // それ以上は per-pubkey キャップ下の正直な履歴ではなく、接続ごとの巡回を止める。
+// 頁数の上限は手元だけの値なので、いいねを含めた記憶の上限から決める（limit=1 のリレーでも正直な履歴を全部読む・反証 RS3-R06）
 const MAX_HISTORY_PAGES = MAX_SEEN_EVENT_IDS * 2 + 2;
 // S3R5-U-WSR-U2 (a): まだ一度も開いていない接続の試みだけを30秒で待つ組から外す（一度開いたリレーは時間で外さない）
 export const OWN_HISTORY_CONNECT_WAIT_MS = 30 * 1000;
@@ -1615,6 +1639,7 @@ export class RelayPool {
     now = () => Date.now() }) {
     this.relays = relays;
     this.tag = tag;
+    this.reactionTag = reactionTagOf(tag); // 便 LIKE: いいねの封筒だけのタグ（購読とライブの履歴で一緒に取る）
     this.authors = new Set(authors || []);
     this.ownAuthor = typeof ownAuthor === 'string' && this.authors.has(ownAuthor) ? ownAuthor : null;
     this.since = Number(since) > 0 ? Math.floor(Number(since)) : 0;
@@ -1640,6 +1665,9 @@ export class RelayPool {
     // ＝「正しい署名で氾濫させるメンバー」への CPU 防御（§9.4b）を、証拠つきで維持する。
     // 偽造イベントは検証を通らないので、ここに他人を入れることはできない。
     this.verifiedOverCap = new Set();
+    // 便 LIKE: いいねの封筒の送り手ごとの数（検証済みのユニークだけ）と、上限を超えた送り手（以後のいいねは検証前に落とす）
+    this.perPubkeyReactionCount = new Map();
+    this.reactionOverCap = new Set();
     this.pendingPublishes = [];    // 全リレー切断中のバッファ
     this.closed = false;
     this.subSerial = 0;
@@ -1800,7 +1828,7 @@ export class RelayPool {
   }
 
   _subscribe(ws) {
-    const filter = { kinds: [P2P_EVENT_KIND], '#t': [this.tag] };
+    const filter = { kinds: [P2P_EVENT_KIND], '#t': [this.tag, this.reactionTag] };
     // ラン間汚染遮断: 現ラン START_TIME 以降のイベントのみ要求（前ランの保持イベントを除外）。
     // リレーは since 遵守を義務付けられないため _handleMessage 側でも created_at を再チェックする。
     if (this.since > 0) filter.since = this.since;
@@ -1822,7 +1850,7 @@ export class RelayPool {
     if (this.authors.size === 0 || !Number.isSafeInteger(until)
         || (this.since > 0 && until < this.since) || pageCount >= MAX_HISTORY_PAGES) return 'end';
     const filter = {
-      kinds: [P2P_EVENT_KIND], '#t': [this.tag], authors: [...this.authors],
+      kinds: [P2P_EVENT_KIND], '#t': [this.tag, this.reactionTag], authors: [...this.authors],
       until, limit: HISTORY_PAGE_LIMIT,
     };
     if (this.since > 0) filter.since = this.since;
@@ -1952,10 +1980,12 @@ export class RelayPool {
     // 1) 安価な著者チェック（O(1)・高コストなSchnorr検証の前）
     if (!this.authors.has(ev.pubkey)) return;
     if (ev.kind !== P2P_EVENT_KIND || !Array.isArray(ev.tags)
-        || !ev.tags.some(tag => Array.isArray(tag) && tag[0] === 't' && tag[1] === this.tag)) return;
+        || !(hasGroupTag(ev, this.tag) || hasGroupTag(ev, this.reactionTag))) return;
     // 1b) 検証済みキャップ超過のpubkeyは署名も件数も再確認しない。
     //     履歴ではそのリレーのページだけを前へ送る（他リレーのカーソルには効かない）。
-    if (this.verifiedOverCap.has(ev.pubkey)) {
+    // 便 LIKE: いいねの上限を超えた送り手のいいねの封筒も同じく落とす（ほかの種類は落とさない）。
+    const reactionEnvelope = isReactionEnvelope(ev, this.tag);
+    if (this.verifiedOverCap.has(ev.pubkey) || (reactionEnvelope && this.reactionOverCap.has(ev.pubkey))) {
       if (page && parsed[1] === page.subId && Number.isSafeInteger(ev.created_at)
           && ev.created_at <= page.until) {
         page.oldest = page.oldest === null ? ev.created_at : Math.min(page.oldest, ev.created_at);
@@ -2032,7 +2062,16 @@ export class RelayPool {
 
     // 5) per-pubkeyキャップ（§9.4b: メンバー氾濫のCPU防御）＋氾濫検知（§9.4c）。
     //    **署名検証に合格したイベントだけ**を数える＝そのメンバーが本当に発行した証拠がある。
-    if (!alreadyCounted) {
+    //    便 LIKE: いいねの封筒は別の数えで、警告は出さず、上限の後は捨てるだけ。
+    if (!alreadyCounted && reactionEnvelope) {
+      const count = (this.perPubkeyReactionCount.get(ev.pubkey) || 0) + 1;
+      this.perPubkeyReactionCount.set(ev.pubkey, count);
+      if (count > PER_PUBKEY_REACTION_CAP) {
+        this.reactionOverCap.add(ev.pubkey);
+        this._rememberSeenId(ev.id, ev.created_at);
+        return;
+      }
+    } else if (!alreadyCounted) {
       const count = (this.perPubkeyCount.get(ev.pubkey) || 0) + 1;
       this.perPubkeyCount.set(ev.pubkey, count);
       if (count === FLOOD_ALERT_THRESHOLD && this.onFlood && !this.floodAlerted.has(ev.pubkey)) {
@@ -2050,7 +2089,8 @@ export class RelayPool {
       const result = this.onEvent(ev, url);
       if (result && typeof result.then === 'function') {
         const pending = Promise.resolve(result);
-        if (this.ownAuthor && ev.pubkey === this.ownAuthor) {
+        // 便 LIKE: 自分のいいねの封筒は自分の発言の履歴の完了を待たせない（Lean RS3-L08）
+        if (this.ownAuthor && ev.pubkey === this.ownAuthor && !reactionEnvelope) {
           this._ownInflight.add(pending);
           const remove = () => this._ownInflight.delete(pending);
           pending.then(remove, remove);
@@ -2207,7 +2247,8 @@ export class RelayPool {
       states: Object.fromEntries(urls.filter((url) => this._ownState.has(url)).map((url) => [url, this._ownState.get(url)])) };
   }
 
-  publish(event) {
+  // queue: 全リレーが切れている間はバッファへ積むか（便 LIKE: いいねは積まない＝発言・既読・投票の 200 件の枠を押し出さない）
+  publish(event, { queue = true } = {}) {
     const json = JSON.stringify(['EVENT', event]);
     let sent = 0;
     for (const ws of this.sockets.values()) {
@@ -2215,7 +2256,7 @@ export class RelayPool {
         try { ws.send(json); sent++; } catch (e) { /* noop */ }
       }
     }
-    if (sent === 0) {
+    if (sent === 0 && queue) {
       this.pendingPublishes.push(json);
       if (this.pendingPublishes.length > 200) this.pendingPublishes.shift();
     }
@@ -2378,6 +2419,9 @@ export class GameRelayChannel {
     this.hasOwnRecord = typeof opts.hasOwnRecord === 'function' ? opts.hasOwnRecord : null;
     // 在席通知（v3.3追補）: onPresence(uid, state, timestamp)。UI表示専用（採点に影響しない）。
     this.onPresence = opts.onPresence || (() => {});
+    // 便 LIKE（2026-11-26）: 発言へのいいね（表示だけ）。onReaction(reaction) を渡した画面だけが受け取り、
+    // 署名をその画面が確かめる（渡さない画面＝復元クライアントは読み飛ばす）。
+    this.onReaction = typeof opts.onReaction === 'function' ? opts.onReaction : null;
     this.presenceByUid = {}; // uid -> { state, timestamp }（最新のみ保持・永続化しない）
     // このチャネルが発行した inner の署名（自セッションのエコーを onSelfAction から除外するため）。
     this._ownPublishedSigs = new Set(this._loadJson(this._ownSigsStoreKey(), []));
@@ -2586,7 +2630,7 @@ export class GameRelayChannel {
 
   // ---------- 発行 ----------
 
-  _publishInner(innerObj) {
+  _publishInner(innerObj, { queue = true, tag = this.tag, onSent = null } = {}) {
     // このチャネル自身が発行した inner の署名を記録する。リレーは自分の発行イベントを購読へ
     // エコーバックするため、onSelfAction が「自分の別クライアント」と「自セッションのエコー」を
     // 取り違えないよう、この集合に含まれ、かつ本人の行動の控えが保存済みのエコーだけを無視する。
@@ -2600,9 +2644,10 @@ export class GameRelayChannel {
       if (!this.pool) this.start();
       if (!this.pool) return;
       const content = JSON.stringify(innerObj);
-      const ev = buildEvent(this.nostrSk, this.nostrPubkey, [['t', this.tag]], content,
+      const ev = buildEvent(this.nostrSk, this.nostrPubkey, [['t', tag]], content,
         Math.floor(this.now() / 1000));
-      this.pool.publish(ev);
+      const sent = this.pool.publish(ev, { queue });
+      if (sent > 0 && typeof onSent === 'function') onSent();
     };
     return doPublish().catch(e => console.error('relay publish failed:', e));
   }
@@ -2646,6 +2691,17 @@ export class GameRelayChannel {
     });
   }
 
+  // 便 LIKE: 発言へのいいねの発行（署名つき・表示だけ）。reaction = {uid, ref, stamp, on, timestamp, signature}
+  // いいねのタグ（reactionTagOf）だけを付ける。切れている間は積まない。このチャネルから出すのは、受け手の上限（PER_PUBKEY_REACTION_CAP）より少し手前まで。
+  // 出した数はゲームの身元（ブロック・組・本人）ごとに頁の間ずっと数え（チャネルを作り直しても戻さない）、送れなかった分は数えない（反証 RS3-R07）。
+  publishReaction(reaction) {
+    if (!isReactionShape(reaction)) return undefined;
+    const key = `${this.blockNum}|${this.groupId}|${this.uid}`;
+    if ((REACTION_PUBLISH_COUNTS.get(key) || 0) >= PER_PUBKEY_REACTION_CAP - 20) return undefined;
+    return this._publishInner({ type: 'reaction', blockNum: this.blockNum, groupId: this.groupId, ...pickReaction(reaction) },
+      { queue: false, tag: reactionTagOf(this.tag), onSent: () => REACTION_PUBLISH_COUNTS.set(key, (REACTION_PUBLISH_COUNTS.get(key) || 0) + 1) });
+  }
+
   // 受領証明の発行（v3.2 §6.3・平文封筒・グループ全員へブロードキャスト）。
   // receipt = {receiverUid, actionHash, timestamp, signature}（action受領）
   //         | {receiverUid, senderUid, msgRefs[], timestamp, signature}（既読バッチ）
@@ -2663,10 +2719,14 @@ export class GameRelayChannel {
     try {
       const inner = JSON.parse(ev.content);
       if (!inner || inner.blockNum !== this.blockNum || inner.groupId !== this.groupId) return;
-      if (!['chat', 'action', 'receipt', 'presence'].includes(inner.type)) return;
+      if (!['chat', 'action', 'receipt', 'presence', 'reaction'].includes(inner.type)) return;
+      // 便 LIKE: 数えの振り分け（封筒の先頭）と中身の種類が食い違う封筒は捨てる（いいねの数えで発言などを運ばせない）
+      if ((inner.type === 'reaction') !== isReactionEnvelope(ev, this.tag)) return;
       const senderUid = inner.type === 'receipt' ? inner.receiverUid : inner.uid;
       // 鍵から uid は逆引きしない。内側が主張する発信者の名簿行だけを照合する。
       if (this.validNostrByUid.get(senderUid) !== ev.pubkey) return;
+      // 便 LIKE: いいねは採点の外なので、受理済み・未来の印の帳簿を通さずに扱う（自分の別端末のものも同じ）
+      if (inner.type === 'reaction') return await this._handleReaction(inner);
       if (inner.type === 'chat' && !isClientChatWithinLimit(inner.text, this.getMaxMsgChars())) return;
       if (this.isAccepted(inner.type, inner)) return true;
       if (this.futureMarks?.noteEvent(inner.type, inner, ev.id)) return true;
@@ -2784,6 +2844,19 @@ export class GameRelayChannel {
       return true;
     }
     await this._ingestReceipt(receipt, { verified: true });
+  }
+
+  // 便 LIKE: いいねの受信。形・名簿・未来でないことだけを見て渡す（未来のものは捨てる・印は付けない）。
+  // 署名は受け取った画面（onReaction の先）が確定名簿の鍵で確かめる（確定名簿の前に届いた分は画面が預かる）。
+  async _handleReaction(inner) {
+    if (!this.onReaction) return true;
+    const reaction = { uid: inner.uid, ref: inner.ref, stamp: inner.stamp, on: inner.on,
+      timestamp: inner.timestamp, signature: inner.signature };
+    if (!isReactionShape(reaction)) return true;
+    if (!this.members.some((m) => m.uid === reaction.uid)) return true;
+    if (!isClientTimestampAllowed(reaction.timestamp, this.now())) return true;
+    try { await this.onReaction(reaction); } catch { /* 表示だけ */ }
+    return true;
   }
 
   // 在席通知の受理（v3.3追補）。署名検証＋古い通知の無視のみ。表示専用なので永続化しない。

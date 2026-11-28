@@ -293,7 +293,7 @@ const modalState = { lang: 'ja', voteDeadlineNoticeOpen: true, away: false,
 let modalNow = 599999;
 let modalClose = 1_200_000;
 const modalScope = { state: modalState, $: (id) => id === 'game-area' ? gameArea : null,
-  el, actionReceipted: () => false, renderGame: () => {}, sendVote: () => {},
+  el, actionReceipted: () => false, ownVoteReceipted: () => false, renderGame: () => {}, sendVote: () => {}, // 便 VOTEEXTRA: 締切の注意は自分の全部の投票から決める
   resumeOtherSession: () => {}, endThisTab: () => {}, playerNumberOf, pointedTemplateText, pointedTemplateParts, document: { body },
   submissionChatCloseAt: () => modalClose, clientNow: () => modalNow,
   VOTE_RECEIPT_CUTOFF_MS: 600000, GUEST_PINNED_RULES: { minMessages: 20 } };
@@ -389,14 +389,16 @@ const extractRecovery = (name) => {
 };
 let countBody = extractRecovery('actionReadCount');
 if (process.argv.includes('--mutation=t8-read-count-all-receipts')) {
-  const guarded = 'for (const rc of clientChatSourcedReceipts(state.receipts, submissionChatWindow(), submissionChatCloseAt())) {\n    if (rc.actionHash === h && rc.receiverUid !== actorUid && isReceiptTimely(rc.timestamp, action.timestamp))';
+  const guarded = 'for (const rc of clientChatSourcedReceipts(state.receipts, chatWindow, submissionChatCloseAt())) {\n    if (rc.actionHash === h && rc.receiverUid !== actorUid && isReceiptTimely(rc.timestamp, action.timestamp)\n      && actionReceiptInChatWindow(rc.timestamp, chatWindow))';
   assert.equal(countBody.split(guarded).length, 2, 'T8 count mutation hits once');
   countBody = countBody.replace(guarded,
     'for (const rc of Object.values(state.receipts)) {\n    if (rc.actionHash === h && rc.receiverUid !== actorUid)');
 }
 const t8Now = 1_800_000_000_000, t8Close = t8Now + 3_600_000;
 const t8State = { blockNum: 3, groupId: 2, receipts: {} };
-const t8Deps = { state: t8State, actionHashV2, clientChatSourcedReceipts, isReceiptTimely,
+// 便 VOTEEXTRA（Lean VE-L03）: 表示でも宣言窓の外の行動の受領証明を数えない（公式の J-26 と同じ式）
+const actionReceiptInChatWindow = new Function(`${extractRecovery('actionReceiptInChatWindow')}\nreturn actionReceiptInChatWindow;`)();
+const t8Deps = { state: t8State, actionHashV2, clientChatSourcedReceipts, isReceiptTimely, actionReceiptInChatWindow,
   submissionChatWindow: () => ({ startMs: t8Now - 600_000, endMs: t8Close }),
   submissionChatCloseAt: () => t8Close };
 const t8Build = (body, name) => new Function(...Object.keys(t8Deps), `${body}\nreturn ${name};`)(...Object.values(t8Deps));
@@ -421,6 +423,12 @@ t8State.receipts = { one: t8Receipt(t8Close + 1000, t8LateHash) };
 assert.equal(isReceiptTimely(t8Close + 1000, t8LateVote.timestamp), true);
 assert.equal(t8Count('V', 'vote', t8LateVote), 0, 'T8 timely but not carried is absent from display');
 assert.equal(t8Receipted('V', 'vote', t8LateVote), false, 'T8 timely but not carried is absent from vote status');
+const t8EarlyVote = { encrypted: 'early', timestamp: t8Now - 590_000 };
+const t8EarlyHash = actionHashV2('vote', 3, 2, 'V', 'early', t8EarlyVote.timestamp);
+t8State.receipts = { one: t8Receipt(t8Now - 605_000, t8EarlyHash) };
+assert.equal(isReceiptTimely(t8Now - 605_000, t8EarlyVote.timestamp), true);
+assert.equal(t8Count('V', 'vote', t8EarlyVote), 0, 'T8 timely but before the declared window is absent from display (VE-L03)');
+assert.equal(t8Receipted('V', 'vote', t8EarlyVote), false, 'T8 timely but before the declared window is absent from vote status (VE-L03)');
 const memberStart = recovery.indexOf('function renderMemberList(displayNow) {');
 const memberEnd = recovery.indexOf('\n// 開始待機（waiting）', memberStart);
 assert(memberStart >= 0 && memberEnd > memberStart);

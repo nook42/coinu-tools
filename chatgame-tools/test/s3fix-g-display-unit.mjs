@@ -206,7 +206,8 @@ const deadlineBody = recovery.slice(deadlineStart, deadlineEnd);
 const recoveryEntryState = { away: false, voteDeadlineEntryPending: true,
   voteDeadlineNoticeOpen: false, timeline: { chatCloseAt: end }, myVote: null, uid: 'ME' };
 const runRecoveryEntry = (now, phase = 'chatting', valid = false) => {
-  new Function('state', 'phase', 'renderNow', 'Number', 'actionReceipted', deadlineBody)(
+  // 便 VOTEEXTRA: 入室の締切の注意は自分の全部の投票（myVote と myVotePrev）から決める（ownVoteReceipted）
+  new Function('state', 'phase', 'renderNow', 'Number', 'ownVoteReceipted', deadlineBody)(
     recoveryEntryState, phase, now, Number, () => valid);
 };
 runRecoveryEntry(end - 10_800_001);

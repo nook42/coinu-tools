@@ -1,3 +1,4 @@
+> **2026-11-25 便 PLAYAT:** 参加予定時刻の事前設定（GM の集める仕事 `availability_seed`・ChatGameDO の受け取る口 `/seed-availability` と WS の印）を正典から byte 同一で COPY。採点・名簿・提出物の行は変えていない。GM・ChatGameDO を源とする MIRROR の窓は、旧 sha256 の同じ行数の窓を新しい正典で全走査し、各1か所だけ一致した位置へ行範囲だけを付け直した（本文と sha256 は据え置き）。COPY の sha256 を更新した。
 > **2026-11-15 WR-PRE-ADMINGAS-FIX1:** GMの正常待ちからfee_cap_blockedを外した正典をbyte同一でCOPY。同じ行数の全GM MIRROR窓を旧sha256で全走査し、各1箇所に一致（行位置・本文・sha256は不変）。COPYのsha256を更新し、復元distを再生成した。ChatGameDOの写しは変更していない。
 > **2026-11-15 便 WR-PRE-PRESENCE:** presence の枠を容量120・30秒に1つ戻る形にし、不変activeの合図をuidごと60秒に1回まで配る ChatGameDO を正典から byte 同一で COPY。完了した WR-PRE-ADMINGAS の GM も同期した。対象の MIRROR は旧 sha256 の同長窓を全走査し、唯一一致の位置へ行範囲だけを付け直した。dist は Node 22 の既存 build/bundle.mjs で再生成する。
 > **2026-10-27 WR-RPC2-GM-FIX4:** `game-master-DO.js` を正典から byte 同一で COPY。GM MIRROR 9 窓は旧写しの本文・sha256 と新正典の同長全走査を照らし、各窓が一意に一致した。本文と sha256 は据え置き、行範囲だけ更新。
@@ -101,10 +102,11 @@ MIRROR 行は **正典ソースの該当行範囲**（1-indexed、`\n` 結合・
 | vendor path | source path | sha256 | type |
 |---|---|---|---|
 | `vendor/workers/auth_workers/lib/cors.js` | `workers/auth_workers/lib/cors.js` | `bcfcfc13e854eafcc6636b74a1498e29d41fb6c210712987037c7b638ca3d296` | COPY |
-| `vendor/workers/game_workers/game-master-DO.js` | `workers/game_workers/game-master-DO.js` | `a609b66081ca688d0a04fe99530216d869ad329446b8b1b1eae359321cb19bec` | COPY |
+| `vendor/workers/game_workers/game-master-DO.js` | `workers/game_workers/game-master-DO.js` | `ea94fd3d7e0e68a4f151deba497af5c93f7d600f131d498426adb084129563c4` | COPY |
 | `vendor/workers/game_workers/lib/roster-anchor-rule.js` | `workers/game_workers/lib/roster-anchor-rule.js` | `182deb697a5162478af2fc136b41619199b5796677a67fc09d8096a6e0d04453` | COPY |
 | `vendor/workers/game_workers/lib/roster-canonical.js` | `workers/game_workers/lib/roster-canonical.js` | `03e771389271388cc3433f57e5bf8013830a451ad1c3fad741b052262bf6d0ce` | COPY |
-| `vendor/workers/game_workers/chat-game-DO.js` | `workers/game_workers/chat-game-DO.js` | `75a234d8759e2196335fa4d95096ce6b0a040d8c45ef2f24e1ccb342099b107b` | COPY |
+| `vendor/workers/game_workers/chat-game-DO.js` | `workers/game_workers/chat-game-DO.js` | `8e7327c6620a091ea34c4bfcafedc70d06c10afab7e837915ceec0146a6254fb` | COPY |
+| `vendor/workers/game_workers/lib/reaction.js` | `workers/game_workers/lib/reaction.js` | `167fef1444fc2e526894fe9cd360e25e93297b27c4484dd53af0b0257aaeee97` | COPY |
 | `vendor/workers/game_workers/lib/protocol-v2.js` | `workers/game_workers/lib/protocol-v2.js` | `6e7a9eb7b6b619481de7799df812290be3afcb244a51fbc839082a0b542e5a69` | COPY |
 | `vendor/workers/game_workers/lib/submission-limits.js` | `workers/game_workers/lib/submission-limits.js` | `22976d4c33b8d4e793b4c26910c7185cb09ff80705f7b80d1791353bf1e6056b` | COPY |
 | `vendor/workers/game_workers/lib/priority-fields.js` | `workers/game_workers/lib/priority-fields.js` | `b7437dc57fa403c562f0a99d10e155fa07bf182eac95904f80a12c6f53a0e2ec` | COPY |
@@ -135,16 +137,16 @@ MIRROR 行は **正典ソースの該当行範囲**（1-indexed、`\n` 結合・
 | `vendor/workers/game_workers/lib/alert.js` | `workers/game_workers/lib/alert.js` | `35781307cc3497b6e30a4741e4e4e853d3743d803bce0bea7ea69ac682414e64` | COPY |
 | `vendor/workers/game_workers/lib/observation-write-failures.js` | `workers/game_workers/lib/observation-write-failures.js` | `25916214d12e97ef11a8ad424b73ccb6878667578d3e7d5ac3a3a9aceb201cfa` | COPY |
 | `vendor/workers/lottery_workers/select-winners.js` | `workers/lottery_workers/lottery-DO.js:2572-2659`（本体=2573-2658）／ `workers/game_workers/lib/select-winners.js` | `04f9432845786255d21d488af3b84cb0cc09ac240610de9a6a6f6457154dd786` | EXTRACT + COPY |
-| `src/stages/results.js mirrorRewardSplit` | `workers/game_workers/game-master-DO.js:11580-11738` | `320b6e967119dca5931207551995bdd3543d5a639feaec439f627fa3a269553e` | MIRROR |
-| `src/stages/results.js autoRosterTextFromSelection` | `workers/game_workers/game-master-DO.js:16962-16966`（Stage B selection から group0 を構築し、vendor の正準化を呼ぶ） | `c77ef5c98b2e2f974483c5e4b533628bf748e7566bf94da7ea963fdbe20b7986` | MIRROR |
-| `src/stages/results.js runAutoDistribute` | `workers/game_workers/game-master-DO.js:17003-17128`（`autoDistribute` の点数計算部＝B1 オンチェーン再検証 → memberResults（適格帯判定込み）→ COINU 按分 → 50/50 Split） | `1df9664d0e69182291d074fae90dff646eebe257ce47a6d3b07a72e4ba22060b` | MIRROR |
-| `src/stages/grouping.js toPublishedShape` | `workers/game_workers/game-master-DO.js:18326-18332`（`createGroupSummary` 内の公開 `groups` 写像） | `8c0caf301712ae3b40201922a1810e04190e1199fb2f573ff4721199786022d6` | MIRROR |
-| `src/stages/grouping.js countGroupsByLang` | `workers/game_workers/game-master-DO.js:18338-18348` | `46451a5b65b4a77861508ec844322cf4e47a0edd66776dc16b604841cf7a38ae` | MIRROR |
-| `src/stages/results.js rosterMembersOf` | `workers/game_workers/chat-game-DO.js:800-818`（`publishRosterFile` の canonicalRosterText 呼び出し・R2公開。公開キャッシュ喪失時にアンカー済み sha256 の照合相手を再構成するために要る） | `1e548c657d58f66ed592d2af8199e1aa5aa5092456c69dec9a6502f9684f33c2` | MIRROR |
-| `src/stages/results.js reconstructedRosterIndexSha256` | `workers/game_workers/game-master-DO.js:7109-7134`（`buildRosterIndex` と `publishRosterIndexBestEffort` 呼び手の groupId sort。配列添字以外の uid は挿入順） | `ebde280106257101672f3c27f9996225f96a142f9022d0fa2efaa5b5d630cb61` | MIRROR |
-| `src/stages/results.js reconstructCanonicalRosterPayloads index order` | `workers/game_workers/game-master-DO.js:7169-7172`（`rebuildAndPublishRosterManifest` の index 用 groupId sort と indexText） | `9e4206afcf1aa3579903b523eb55dde7ef7c5c4be9641a9f8a2224dbe3329c84` | MIRROR |
-| `src/stages/results.js reconstructCanonicalRosterPayloads manifest order` | `workers/game_workers/game-master-DO.js:7205-7206`（同関数の groups.sort と manifestText） | `6a41a1467ea787aa4dc9942ee15a46be57f83fa5e76eba6f09abca3c37a61f56` | MIRROR |
-| `src/stages/grouping.js getGroupSizeDistribution` | `workers/game_workers/game-master-DO.js:18352-18358` | `bb24b57c75500851c6d8751c2bb8b649a6f256e1cc1a3d92913c1f78aa39a8be` | MIRROR |
+| `src/stages/results.js mirrorRewardSplit` | `workers/game_workers/game-master-DO.js:11929-12087` | `320b6e967119dca5931207551995bdd3543d5a639feaec439f627fa3a269553e` | MIRROR |
+| `src/stages/results.js autoRosterTextFromSelection` | `workers/game_workers/game-master-DO.js:17311-17315`（Stage B selection から group0 を構築し、vendor の正準化を呼ぶ） | `c77ef5c98b2e2f974483c5e4b533628bf748e7566bf94da7ea963fdbe20b7986` | MIRROR |
+| `src/stages/results.js runAutoDistribute` | `workers/game_workers/game-master-DO.js:17352-17477`（`autoDistribute` の点数計算部＝B1 オンチェーン再検証 → memberResults（適格帯判定込み）→ COINU 按分 → 50/50 Split） | `1df9664d0e69182291d074fae90dff646eebe257ce47a6d3b07a72e4ba22060b` | MIRROR |
+| `src/stages/grouping.js toPublishedShape` | `workers/game_workers/game-master-DO.js:18675-18681`（`createGroupSummary` 内の公開 `groups` 写像） | `8c0caf301712ae3b40201922a1810e04190e1199fb2f573ff4721199786022d6` | MIRROR |
+| `src/stages/grouping.js countGroupsByLang` | `workers/game_workers/game-master-DO.js:18687-18697` | `46451a5b65b4a77861508ec844322cf4e47a0edd66776dc16b604841cf7a38ae` | MIRROR |
+| `src/stages/results.js rosterMembersOf` | `workers/game_workers/chat-game-DO.js:861-879`（`publishRosterFile` の canonicalRosterText 呼び出し・R2公開。公開キャッシュ喪失時にアンカー済み sha256 の照合相手を再構成するために要る） | `1e548c657d58f66ed592d2af8199e1aa5aa5092456c69dec9a6502f9684f33c2` | MIRROR |
+| `src/stages/results.js reconstructedRosterIndexSha256` | `workers/game_workers/game-master-DO.js:7451-7476`（`buildRosterIndex` と `publishRosterIndexBestEffort` 呼び手の groupId sort。配列添字以外の uid は挿入順） | `ebde280106257101672f3c27f9996225f96a142f9022d0fa2efaa5b5d630cb61` | MIRROR |
+| `src/stages/results.js reconstructCanonicalRosterPayloads index order` | `workers/game_workers/game-master-DO.js:7511-7514`（`rebuildAndPublishRosterManifest` の index 用 groupId sort と indexText） | `9e4206afcf1aa3579903b523eb55dde7ef7c5c4be9641a9f8a2224dbe3329c84` | MIRROR |
+| `src/stages/results.js reconstructCanonicalRosterPayloads manifest order` | `workers/game_workers/game-master-DO.js:7547-7548`（同関数の groups.sort と manifestText） | `6a41a1467ea787aa4dc9942ee15a46be57f83fa5e76eba6f09abca3c37a61f56` | MIRROR |
+| `src/stages/grouping.js getGroupSizeDistribution` | `workers/game_workers/game-master-DO.js:18701-18707` | `bb24b57c75500851c6d8751c2bb8b649a6f256e1cc1a3d92913c1f78aa39a8be` | MIRROR |
 | `test/players.mjs buildSubmissionPayload` | `src/components/game/SubmissionPhase.js:742-1485`（`cappedMessages`、action snapshot正規化、receipt選別・自己集約、compact sanitize再署名まで。欄は任意で、この試験束は欄を組まない。D1b の提出窓判定は C） | `8d3bdc1d69f10f9548716084bf6262102d0b59182150c590081935e85ad8496b` | MIRROR |
 | `vendor/workers/game_workers/lib/load-test-context.js` | `workers/game_workers/lib/load-test-context.js` | `dfb455ef5f2b282925fa831cb1bbc9da0f0fac6d071ec3ef962fce5152e7b78b` | COPY |
 | `src/stages/results.js mirrorRewardSplit` | `src/stages/results.js`（ミラー本体＝`function mirrorRewardSplit(...)` のシグネチャ行から列0の `}` まで。F-7(b)-3 の**逆方向**の固定） | `489f45c5a68da54066417e181325dc4c42aa49329618301ae24c4d955f359cb9` | MIRROR-BODY |

@@ -115,6 +115,10 @@ const COPIES = [
   ['vendor/src/utils/submissionGuarantee.js', 'src/utils/submissionGuarantee.js'],
   // S3R6 便 TRIMWARN: 切り詰めの確認の保証の比べを復元も共有する正典 COPY。
   ['vendor/src/utils/trimGuaranteeCheck.js', 'src/utils/trimGuaranteeCheck.js'],
+  // 2026-11-25 便 VOIDKEEP: void の発信を「無効」の行で残す表示の判定と送り手ごとの上限を、公式と共有する正典 COPY。
+  ['vendor/src/utils/voidDisplay.js', 'src/utils/voidDisplay.js'],
+  // 2026-11-26 便 STAMP: 発言へのスタンプの共有の形（ChatGameDO と relay.js が import する）。
+  ['vendor/workers/game_workers/lib/reaction.js', 'workers/game_workers/lib/reaction.js'],
 ];
 
 // MIRROR 台帳: 正典行範囲（1-indexed 両端含む）の sha256（VENDOR_SYNC.md と一致させること）
@@ -128,7 +132,8 @@ const MIRRORS = [
     // 2026-11-07 便 WR-E2E-S2-GMGROUP-FIX2（開始関門の待ちの終わりの道・警報の印の原因と配送の結果）: GM 前方で +53 行。旧 sha256 の同じ行数の窓を新しい GM で全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 便 WR-PRE-PRESENCE（presence の時間回復・合図の配信・ADMINGAS の同期）: 前方で +25 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
     // 2026-11-15 WR-PRE-ADMINGAS-FIX1: 同長窓を全走査し唯一一致を再確認。本文・sha256・行位置は不変。
-    startLine: 16961, endLine: 16970,
+    // 2026-11-25 便 PLAYAT（参加予定時刻の事前設定: 集める仕事 availability_seed）: 前方で +349 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    startLine: 17310, endLine: 17319,
     sha256: '9580ed4dc1c7754e1d6c202b63527160393bcf5c84e8c2fef8e6a447888e02cd',
     mirrorFile: 'vendor/workers/game_workers/game-master-DO.js',
     mirrorSignature: '  async publishAutoRosterFile(blockNum, players) {',
@@ -272,8 +277,11 @@ const MIRRORS = [
     // S3R5 段4: PHASE +20・STORE +5・SELF +19 の前方追加。旧 sha の55行全走査で唯一一致し本体不変。
     // S3R5 便 LOCK: 前方の import +1。旧55行 sha の同長全走査で 1059-1113 に唯一一致。
     // WR-E2E-S3-ROSTERNAME-FIX1: 前方の表示採用・init 保持のみ変更。55行 sha の唯一一致。
-    startLine: 1111,
-    endLine: 1165,
+    // 2026-11-26 便 REPLY・STAMP（返信の引用・発言へのスタンプ）: 前方に足した import・prop の行で +1 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 STAMP（発言として送る形）・LIKE（いいね）: 前方に足した行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 LIKE（反証 v2 の直し）: 前方の行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    startLine: 1118,
+    endLine: 1172,
     sha256: 'f0a85e6c5ff2edf6c339ce7a5c5e5621dba27b42f8cd11526c195bcfc91736cf',
     mirrorFile: 'src/recovery/relay-verify.js',
     mirrorSignature: 'export function makeVerifyRelayInner(getMembers, blockNum, groupId, maxMessages = 100) {',
@@ -286,8 +294,13 @@ const MIRRORS = [
     // 規則版数5の投票資格とラスト10分の門。復元側の wrapper・門・純粋 helper を連結する。
     // S3R6 便 C3B の import 1行で前方 +1。旧 sha256 の同長全走査で唯一一致。
     // 2026-11-20: 版 7（9804e7aa2）の画面の直しでこの範囲より前が +4 行。旧 sha256 の同長全走査で唯一一致（中身は byte 一致）。
-    startLine: 267,
-    endLine: 279,
+    // 2026-11-25 便 VOIDKEEP・CHATSOUND（void を「無効」で残す・効果音と通知・反証と Lean の直しの後）: ChatPhase の前方で計 +3 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 REPLY・STAMP（返信の引用・発言へのスタンプ）: 前方に足した import・prop の行で +4 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 STAMP（発言として送る形）・LIKE（いいね）: 前方に足した行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 VOTEEXTRA（投票済みの表示）: ChatPhase の前方の行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 VOTEEXTRA（反証の直し）: ChatPhase の前方の行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    startLine: 282,
+    endLine: 294,
     sha256: 'ee4215ec57745f108e5db9f6ff196ed74f70d9902312ad7e8a0a80041cef9a3e',
     mirrorFile: 'src/recovery/app.js',
     mirrorParts: [
@@ -319,9 +332,18 @@ const MIRRORS = [
     //   20行窓の全走査で旧sha256の唯一一致（243-262）を確認した（中身は byte 一致）。
     // S3R6 便 C3B の import 1行で前方 +1。旧 sha256 の同長全走査で唯一一致。
     // 2026-11-20: 版 7（9804e7aa2）の画面の直しでこの範囲より前が +4 行。旧 sha256 の同長全走査で唯一一致（中身は byte 一致）。
-    startLine: 326,
-    endLine: 345,
-    sha256: 'bf087cc2fbcafbdba679cf35c2b8934ec1d6969c2ef1313751e934416011d592',
+    // 2026-11-25 便 VOIDKEEP・CHATSOUND（void を「無効」で残す・効果音と通知・反証と Lean の直しの後）: ChatPhase の前方で計 +3 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 REPLY（返信の印）: handleSend の中身が変わった（返信は本文の先頭に印 ">n:hhhhhh " を付けて送る・
+    //   可視内容は本文〈印の後ろ〉で見る・3つの上限は印を含めた全文で見る）。再レビュー: 復元は返信を送らない（印が空）ので、
+    //   4ゲートの判定は今のミラー（chatSendBlockReason）と同じ。窓を新しい handleSend 全体へ付け直し、sha256 を更新した。
+    // 2026-11-26 便 STAMP（発言として送る形）・LIKE（いいね）: 前方に足した行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 CAPWARN（送信の上限の70%の注意）: ChatPhase の前方に足した行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 CAPWARN（Lean の直し）: ChatPhase の前方の行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 VOTEEXTRA（投票済みの表示）: ChatPhase の前方の行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 VOTEEXTRA（反証の直し）: ChatPhase の前方の行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    startLine: 365,
+    endLine: 387,
+    sha256: '385afcbfcf7bc432d6caf8b75597672b69f6bab7483e36136643ad8bd7e32712',
     mirrorFile: 'src/recovery/app.js',
     mirrorSignature: 'function chatSendBlockReason(text) {',
     mirrorSha256: 'b0efdf815247aeef164a6e976463c02a39e02b35b300c50dbfae9bffcb4f2b05',
@@ -365,8 +387,11 @@ const MIRRORS = [
     // S3R5 段4: 同じ前方追加 +44。旧 sha の44行全走査で唯一一致し本体不変。
     // S3R5 便 LOCK: 前方の import +1。旧44行 sha の同長全走査で 1116-1159 に唯一一致。
     // WR-E2E-S3-ROSTERNAME-FIX1: 前方の表示採用・init 保持のみ変更。44行 sha の唯一一致。
-    startLine: 1168,
-    endLine: 1211,
+    // 2026-11-26 便 REPLY・STAMP（返信の引用・発言へのスタンプ）: 前方に足した import・prop の行で +1 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 STAMP（発言として送る形）・LIKE（いいね）: 前方に足した行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 LIKE（反証 v2 の直し）: 前方の行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    startLine: 1175,
+    endLine: 1218,
     sha256: 'd09af814385d5ddb7d8e2cdb580dc1e7f42b16d18edcbc8faee5048597cb76ad',
     mirrorFile: 'src/recovery/relay-client.js',
     mirrorSignature: '  async _verifyChat(msg) {',
@@ -393,8 +418,21 @@ const MIRRORS = [
     //   4行窓の全走査で旧sha256の唯一一致（678-681）を確認した（中身は byte 一致）。
     // S3R6 便 C3B の import 1行で前方 +1。旧 sha256 の同長全走査で唯一一致。
     // 2026-11-20: 版 7（9804e7aa2）の画面の直しでこの範囲より前が +7 行。旧 sha256 の同長全走査で唯一一致（中身は byte 一致）。
-    startLine: 945,
-    endLine: 948,
+    // 2026-11-25 便 VOIDKEEP・CHATSOUND（void を「無効」で残す・効果音と通知・反証と Lean の直しの後）: ChatPhase の前方で計 +42 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 REPLY・STAMP（返信の引用・発言へのスタンプ）: 前方に足した import・prop の行で +69 行。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 STAMP（発言として送る形）・LIKE（いいね）: 前方に足した行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 LIKE（反証 v2 の直し）: 前方の行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 DOMOVED・LIKE（反証と Lean の直し）: 前方の行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 LIKE（反証 v3 の直し）: 前方の行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 CAPWARN（送信の上限の70%の注意）: ChatPhase の前方に足した行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 CAPWARN（反証の直し）: ChatPhase の前方に足した行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 CAPWARN（Lean の直し）: ChatPhase の前方の行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 VOTEEXTRA（投票済みの表示）: ChatPhase の前方の行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 VOTEEXTRA（反証の直し）: ChatPhase の前方の行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-26 便 STAMPFIX（スタンプの発言に返信・いいねを出さない）: ChatPhase の前方（発言の行の関数）に足した2行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    // 2026-11-27 便 SIDES（メンバーでない人が見るチャットの左右の振り分け）: ChatPhase の前方に足した useMemo・prop・onRight の行で窓が動いた。旧 sha256 の同じ行数の窓を全走査し唯一一致の位置へ付け直した（中身は不変）。
+    startLine: 1180,
+    endLine: 1183,
     sha256: 'd094f4d3dc282229ddf76e8c5066c511304d97544e83cad26ec2bff7afb16473',
     mirrorFile: 'src/recovery/app.js',
     mirrorSignature: 'export function isTimestampVisible(timestamp, nowMs) {',

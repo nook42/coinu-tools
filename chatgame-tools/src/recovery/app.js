@@ -64,6 +64,7 @@ import {
 import { calculateDepositPoints } from '../../vendor/workers/game_workers/lib/game-result-calculator.js';
 import { LOCK_POINTS_REREAD_MS, createLockPointsCache, verifyRecoveryLockPoints, summaryDeclaredWei, recoveryLockPointView } from './lock-points.js';
 import { READ_RECEIPT_BATCH_MS } from '../../vendor/src/utils/read-receipt-batching.js';
+import { isVoidTimelineItem, voidDisplayMessageKeys } from '../../vendor/src/utils/voidDisplay.js';
 import { openReadReceiptPause, readReceiptTickGap } from '../../vendor/src/utils/read-receipt-pause.js';
 import { privateKeyToAccount } from 'viem/accounts';
 import { publicActions, verifyMessage } from 'viem';
@@ -2427,14 +2428,22 @@ function canReportTarget(targetUid, atMs) {
     || hasVisibleConfirmedVote(targetUid, atMs);
 }
 
+// 便 VOTEEXTRA（Lean VE-L03）: 投票・密告の受領証明も、宣言窓の外のものは表示で数えない（公式の buildReceiptMaps の J-26 と同じ式・
+// 採点の inChatWindow と同じ）。窓が分からなければ今までどおり篩わない（公式と同じ）。
+function actionReceiptInChatWindow(ts, chatWindow) {
+  return !chatWindow || (typeof ts === 'number' && ts >= chatWindow.startMs && ts <= chatWindow.endMs);
+}
+
 // 自分の発信（投票/密告）が他メンバーの受領証明を得たか（受領待ち→確定の表示用）
 function actionReceipted(actorUid, actionType, action) {
   if (!action?.encrypted || action.timestamp == null) return false;
   const h = actionHashV2(actionType, state.blockNum, state.groupId, actorUid, action.encrypted, action.timestamp);
   const set = new Set();
-  for (const rc of clientChatSourcedReceipts(state.receipts, submissionChatWindow(), submissionChatCloseAt())) {
+  const chatWindow = submissionChatWindow();
+  for (const rc of clientChatSourcedReceipts(state.receipts, chatWindow, submissionChatCloseAt())) {
     // K-S6-005: 発信時刻から ±10分以内の受領証明だけを数える（採点と同一）
-    if (rc.actionHash === h && isReceiptTimely(rc.timestamp, action.timestamp)) set.add(rc.receiverUid);
+    if (rc.actionHash === h && isReceiptTimely(rc.timestamp, action.timestamp)
+      && actionReceiptInChatWindow(rc.timestamp, chatWindow)) set.add(rc.receiverUid);
   }
   return [...set].some((u) => u !== actorUid);
 }
@@ -2443,8 +2452,23 @@ function actionReceipted(actorUid, actionType, action) {
 // voidになったら同一対象への再送のみ可能（対象変更は不可＝受領証明捏造による
 // 対象矛盾フレーミングを構造的に排除する。本体 ChatPhase.myVoteVoid と同じ判定）。
 function myVoteIsVoid() {
-  return !!state.myVote?.timestamp && !actionReceipted(state.uid, 'vote', state.myVote)
+  return !!state.myVote?.timestamp && !ownVoteReceipted()
     && (clientNow() - state.myVote.timestamp) > RECEIPT_FRESH_WINDOW_MS;
+}
+
+// 便 VOTEEXTRA（2026-11-26・保守の依頼・ユーザーの決め・本体 game.js の voteReceiptedUids と同じ判定）: 投票のどれか1件
+// （最初の投票と送り直した分・自分は myVote と myVotePrev と観測した自分の分）に本人以外の受領証明があれば確定。
+function memberVotes(uid) {
+  // 自分は、提出物が運ぶ myVote と myVotePrev だけで決める（観測した自分の分は myVotePrev へ移してある・反証 VE-R02）
+  if (uid === state.uid) {
+    return [state.myVote, ...(Array.isArray(state.myVotePrev) ? state.myVotePrev : [])].filter((v) => v?.encrypted && v.timestamp != null);
+  }
+  const votes = state.observedActions?.votes || {};
+  const list = [votes[uid], ...(Array.isArray(votes[`${uid}__extras`]) ? votes[`${uid}__extras`] : [])];
+  return list.filter((v) => v?.encrypted && v.timestamp != null);
+}
+function ownVoteReceipted() {
+  return memberVotes(state.uid).some((v) => actionReceipted(state.uid, 'vote', v));
 }
 
 // v3.3: 自分の各密告対象の状態（receipted > pending > void）。同一対象への複数発信（再送）は
@@ -3537,7 +3561,7 @@ function renderGameModals(phase) {
   const cutoffTime = cutoff === null ? null
     : `${String(new Date(cutoff).getHours()).padStart(2, '0')}:${String(new Date(cutoff).getMinutes()).padStart(2, '0')}`;
   const showDeadline = phase === 'chatting' && state.voteDeadlineNoticeOpen && !state.away
-    && !(state.myVote && actionReceipted(state.uid, 'vote', state.myVote));
+    && !ownVoteReceipted(); // 便 VOTEEXTRA: 送り直した投票のどれかが確定なら出さない（反証 VE-R01）
   const showProgress = phase === 'chatting' && state.pendingVoteTarget !== null;
   const showReportWarning = phase === 'chatting' && state.pendingReportWarningTarget != null;
   const showMultiSession = phase !== null && state.otherSessionReadReceipt;
@@ -3665,7 +3689,7 @@ function renderGame() {
   if (state.away) state.voteDeadlineEntryPending = true;
   else if (phase === 'chatting' && state.voteDeadlineEntryPending && Number.isFinite(state.timeline?.chatCloseAt)) {
     state.voteDeadlineEntryPending = false;
-    const hasValidVote = !!state.myVote && actionReceipted(state.uid, 'vote', state.myVote);
+    const hasValidVote = ownVoteReceipted(); // 便 VOTEEXTRA（反証 VE-R01）
     const remaining = state.timeline.chatCloseAt - renderNow;
     if (!hasValidVote && remaining >= 0 && remaining <= 3 * 60 * 60 * 1000) {
       state.voteDeadlineNoticeOpen = true;
@@ -3871,8 +3895,8 @@ function renderMemberList(displayNow) {
     // 投票/密告バッジ（自分=ローカル発信、他人=リレー観測。対象は非公開・事実のみ）
     const status = el('div', { className: 'memberActionStatus' });
     // 「投票済み」は受領証明≥1件を得てから表示（正典に数えられる状態＝§6.7）
-    const memberVote = isSelf ? state.myVote : state.observedActions?.votes?.[m.uid];
-    const voted = !!memberVote && actionReadCount(m.uid, 'vote', memberVote) > 0;
+    // 便 VOTEEXTRA: 最初の投票が void で送り直した投票が確定した人も投票済み（送り直した分も全部見る）
+    const voted = memberVotes(m.uid).some((v) => actionReadCount(m.uid, 'vote', v) > 0);
     // 「密告：N」も受領証明≥1件で確定した分だけ数える（生件数＝facts.reportCount / myReports.length は
     // 未読＝正典未確定や void の発信も数えてしまう。本体 game.js reportReceiptedCounts と同一判定）
     const memberReports = isSelf ? state.myReports : (state.observedActions?.reports?.[m.uid] || []);
@@ -3937,8 +3961,10 @@ function actionReadCount(actorUid, actionType, action) {
   if (!action?.encrypted || action.timestamp == null) return 0;
   const h = actionHashV2(actionType, state.blockNum, state.groupId, actorUid, action.encrypted, action.timestamp);
   const set = new Set();
-  for (const rc of clientChatSourcedReceipts(state.receipts, submissionChatWindow(), submissionChatCloseAt())) {
-    if (rc.actionHash === h && rc.receiverUid !== actorUid && isReceiptTimely(rc.timestamp, action.timestamp)) set.add(rc.receiverUid);
+  const chatWindow = submissionChatWindow();
+  for (const rc of clientChatSourcedReceipts(state.receipts, chatWindow, submissionChatCloseAt())) {
+    if (rc.actionHash === h && rc.receiverUid !== actorUid && isReceiptTimely(rc.timestamp, action.timestamp)
+      && actionReceiptInChatWindow(rc.timestamp, chatWindow)) set.add(rc.receiverUid);
   }
   return set.size;
 }
@@ -4008,11 +4034,24 @@ function renderChatLog({ receiptedOnly = false } = {}) {
   // v3.3 表示ルール（本体 chatTimeline.buildChatTimeline と同一）: 表示されるのは
   //   ①受領証明が1件以上あるもの（誰かが±10分以内に受信した＝正典候補）
   //   ②発信主張時刻から10分以内のもの（少なくとも閲覧者が今から受領証明を発行できる）
-  // のいずれか。10分経過して受領証明ゼロの発信（void）は全員の画面から消える
-  // （発信者画面では10分間半透明→消滅。消滅後は同一対象への再送が可能）。
+  // のいずれか。10分経過して受領証明ゼロの発信（void）は、下の isVoidRow で「無効」の行として残す
+  // （便 VOIDKEEP。発信者画面では10分間半透明＋未読の残り時間→「無効」。void の後は同一対象への再送が可能）。
   // 提出画面（receiptedOnly）は「受領証明≥1件」のみ＝10分の受領待ち枠はチャット終了で失効。
   const visible = (ts, readCount) => isTimestampVisible(ts, nowMs) && (readCount > 0
     || (!receiptedOnly && typeof ts === 'number' && Math.abs(nowMs - ts) <= RECEIPT_FRESH_WINDOW_MS));
+  // 便 VOIDKEEP（2026-11-25・本体 chatTimeline.buildChatTimeline の keepVoid と同じ）: void（受領証明の無いまま
+  // 10分を過ぎた発信・提出画面では受領証明の無い発信）も消さずに、半透明＋「無効」の札の行で残す（表示だけ）。
+  // 発言の void の行は送り手ごとに正直な送信の上限の内だけ（vendor の voidDisplay.js）。void の行は
+  // 表示した発言の記憶と最優先欄の区切りの控えに入れない。
+  // 確定したチャット窓の内だけ（反証 VK-R02）。提出画面は締切の時刻で判定する（反証 VK-R04・本体 SubmissionPhase と同じ）。
+  const voidWindow = submissionChatWindow();
+  const voidAt = receiptedOnly ? submissionChatCloseAt() : nowMs;
+  const isVoidRow = (ts, readCount) => isTimestampVisible(ts, nowMs)
+    && isVoidTimelineItem(ts, readCount, { nowMs: voidAt, receiptedOnly, window: voidWindow });
+  const voidKeys = voidDisplayMessageKeys(messages.map((msg) => ({
+    uid: msg.uid, timestamp: msg.timestamp, text: msg.text, key: state.relay.getMsgKey(msg),
+  })));
+  const voidBadge = () => el('span', { className: 'voidBadge', textContent: state.tr('recovery.chat.voidBadge') });
 
   // タイムライン: チャット吹き出し＋投票/密告のインラインシステム行を時系列で並べる
   // （本体 ChatPhase / SubmissionPhase と同一・v3.2 §6.7 既読UX）。
@@ -4025,7 +4064,9 @@ function renderChatLog({ receiptedOnly = false } = {}) {
     const k = msgRefOf(computeMsgKeyV2(state.blockNum, state.groupId, msg)); // 既読は msgRef 参照（案B）
     const source = !self && visibleReaders ? visibleReaders : readers;
     const readCount = source[k] ? [...source[k]].filter((u) => u !== msg.uid).length : 0;
-    if (!visible(msg.timestamp, readCount)) continue; // void（10分経過・受領なし）は非表示
+    const isVoid = !visible(msg.timestamp, readCount) && isVoidRow(msg.timestamp, readCount)
+      && voidKeys.has(state.relay.getMsgKey(msg));
+    if (!visible(msg.timestamp, readCount) && !isVoid) continue; // void（10分経過・受領なし）は上限の内だけ残す
     const avatar = typeof m?.img === 'string' && m.img && m.img.length <= 2048 ? el('img', { className: 'chatAvatar', src: m.img, alt: '' }) : null;
     const rowEl = el('div', { className: self ? 'chatRowSelf' : 'chatRow' });
     const wrapB = el('div', { className: 'chatBubbleWrapper' });
@@ -4034,7 +4075,12 @@ function renderChatLog({ receiptedOnly = false } = {}) {
     bubble.append(el('div', { className: 'chatBubbleText', textContent: msg.text }));
     wrapB.append(bubble);
     const timeRow = el('div', { className: 'chatBubbleTime' });
-    if (self) {
+    if (isVoid) {
+      // void の行は自分・他人とも半透明で、既読・未読の札の代わりに「無効」
+      rowEl.style.opacity = '0.5';
+      timeRow.append(voidBadge());
+      timeRow.append(' ');
+    } else if (self) {
       // 既読UX: 未受領は行全体を半透明＋「未読」・受領で「既読N」（正典未確定の可視化）
       if (readCount === 0) rowEl.style.opacity = '0.5';
       timeRow.append(readCount > 0
@@ -4046,7 +4092,7 @@ function renderChatLog({ receiptedOnly = false } = {}) {
     wrapB.append(timeRow);
     if (self) { rowEl.append(wrapB); if (avatar) rowEl.append(avatar); }
     else { if (avatar) rowEl.append(avatar); rowEl.append(wrapB); }
-    if (!self) {
+    if (!self && !isVoid) {
       const msgKey = state.relay.getMsgKey(msg);
       recoveryShownKeys().add(msgKey);
       rememberRecoveryShownSeparator(msg, msgKey, source[k]);
@@ -4059,7 +4105,7 @@ function renderChatLog({ receiptedOnly = false } = {}) {
   // 吹き出しは自分/他者とも白背景＋テキスト色の枠線(2px)・上下左右中央寄せ、右下に「既読N」＋時刻。
   // テキストは「投票」「密告(N回目)」のみ（対象は非公開）。既読/未読バッジと未読半透明はチャットと
   // 同一挙動（自分の発信のみバッジ表示・未読=半透明。本体 chatTimeline.ChatActionRow と同じ）。
-  const pushAction = (actorUid, actionType, action, nth) => {
+  const pushAction = (actorUid, actionType, action, nth, isVoid = false) => {
     const isSelf = actorUid === state.uid;
     const readCount = actionReadCount(actorUid, actionType, action);
     const actor = byUid.get(actorUid);
@@ -4068,7 +4114,7 @@ function renderChatLog({ receiptedOnly = false } = {}) {
       ? state.tr('recovery.chat.bubbleVote')
       : state.tr('recovery.chat.bubbleReport', { nth });
     const rowEl = el('div', { className: isSelf ? 'chatRowSelf' : 'chatRow' });
-    if (isSelf && readCount === 0) rowEl.style.opacity = '0.5';
+    if ((isSelf && readCount === 0) || isVoid) rowEl.style.opacity = '0.5';
     const avatar = typeof actor?.img === 'string' && actor.img && actor.img.length <= 2048 ? el('img', { className: 'chatAvatar', src: actor.img, alt: '' }) : null;
     const wrapB = el('div', { className: 'chatBubbleWrapper' });
     if (!isSelf) wrapB.append(el('div', { className: 'chatBubbleSender', textContent: memberName(actor) || actorUid, ...(receiptedOnly ? {} : recoveryPlayerTitle(actorUid)) }));
@@ -4083,7 +4129,10 @@ function renderChatLog({ receiptedOnly = false } = {}) {
     bubble.append(textDiv);
     wrapB.append(bubble);
     const timeRow = el('div', { className: 'chatBubbleTime' });
-    if (isSelf) {
+    if (isVoid) {
+      timeRow.append(voidBadge());
+      timeRow.append(' ');
+    } else if (isSelf) {
       timeRow.append(readCount > 0
         ? el('span', { className: 'readBadge', textContent: state.tr('recovery.chat.readBadge', { count: readCount }) })
         : makeUnreadBadge(action.timestamp, actionType));
@@ -4098,24 +4147,38 @@ function renderChatLog({ receiptedOnly = false } = {}) {
 
   // 密告の2枠は最初の受領証明の時刻が早い順に決まる。受領証明の無い（void の）密告は
   // その後で枠を取り、正直な画面では void の対象も2枠に数える。表示の nth は可視行の順。
-  const pushActions = (actorUid, actionType, list) => {
+  // 同じ actionHash の void の行は1つだけ（反証 VK-R05・本体と同じ）。suppressVoid は void の行を出さない。
+  const pushActions = (actorUid, actionType, list, suppressVoid = false) => {
     const sorted = (list || [])
       .filter((a) => a?.encrypted && a.timestamp != null && withinWindow(a.timestamp))
       .sort((a, b) => a.timestamp - b.timestamp);
     let nth = 0;
+    const voidHashes = new Set();
     for (const action of sorted) {
       const readCount = actionReadCount(actorUid, actionType, action);
-      if (!visible(action.timestamp, readCount)) continue; // void発信は非表示（再送可能になる）
+      if (!visible(action.timestamp, readCount)) { // void発信は番号を消費しない（再送可能になる）
+        const h = actionHashV2(actionType, state.blockNum, state.groupId, actorUid, action.encrypted, action.timestamp);
+        if (!suppressVoid && !voidHashes.has(h) && isVoidRow(action.timestamp, readCount)) {
+          voidHashes.add(h);
+          pushAction(actorUid, actionType, action, nth + 1, true);
+        }
+        continue;
+      }
       nth += 1;
       pushAction(actorUid, actionType, action, nth);
     }
   };
 
-  if (state.myVote?.encrypted) pushActions(state.uid, 'vote', [state.myVote]);
+  // 便 VOTEEXTRA: 送り直した自分の投票のどれかが確定しているなら、myVote の void の行は出さない（反証 VE-R04・本体と同じ）
+  if (state.myVote?.encrypted) pushActions(state.uid, 'vote', [state.myVote], ownVoteReceipted());
   pushActions(state.uid, 'report', state.myReports);
   for (const [u, v] of Object.entries(state.observedActions.votes || {})) {
     if (u.endsWith('__extras') || u === state.uid) continue;
-    pushActions(u, 'vote', [v]);
+    // 同じ人の再送（__extras・行には出さない）に受領証明があるなら、先着の void の行は出さない（反証 VK-R03・本体と同じ）
+    const extras = state.observedActions.votes[`${u}__extras`];
+    const resentValid = Array.isArray(extras) && extras.some((a) => a?.encrypted && a.timestamp != null
+      && actionReadCount(u, 'vote', a) > 0);
+    pushActions(u, 'vote', [v], resentValid);
   }
   for (const [u, arr] of Object.entries(state.observedActions.reports || {})) {
     if (u === state.uid || !Array.isArray(arr)) continue;
@@ -4265,7 +4328,7 @@ function renderChatSection(renderNow) {
   const capCharsLeft = Math.max(0, chatCaps.maxChars - myCharsRaw);
   const capMessagesLeft = Math.max(0, chatCaps.maxMessages - myMsgCount);
   const hasVoted = !!state.myVote || state.observedP2P.vote;
-  const voteReceipted = state.myVote ? actionReceipted(state.uid, 'vote', state.myVote) : false;
+  const voteReceipted = ownVoteReceipted(); // 便 VOTEEXTRA（反証 VE-R01）
 
   const row = (left, rightText, ok) => {
     const d = el('div', { className: 'charCounter' });
@@ -4397,13 +4460,15 @@ function renderActionPanel() {
   // v3.3: void（10分経過・受領なし＝なかったこと）になった場合のみ同一対象へ再送可能
   const voteVoid = myVoteIsVoid();
   // 受領済み（他メンバーの受領証明≥1件）なら濃い色、受領待ちなら薄い色にする
+  // 色は myVote そのものの確定で決める（送り直した別の投票が確定していても、myVote の相手を確定の色にしない・本体の反証 VE-R03 と同じ）
   const voteReceiptedNow = !!state.myVote && actionReceipted(state.uid, 'vote', state.myVote);
+  const voteSelfVoid = !!state.myVote?.timestamp && !voteReceiptedNow && (clientNow() - state.myVote.timestamp) > RECEIPT_FRESH_WINDOW_MS;
   const voteCloseAt = submissionChatCloseAt();
   const cutoff = Number.isSafeInteger(voteCloseAt) ? voteCloseAt - VOTE_RECEIPT_CUTOFF_MS : null;
   const votingClosed = cutoff !== null && clientNow() >= cutoff;
   for (const m of others) {
     // void（なかったこと）は選択色を消して押す前の見た目に戻す＝投票済みに見せない
-    const isVoted = voteTarget === m.uid && !voteVoid;
+    const isVoted = voteTarget === m.uid && !voteVoid && !voteSelfVoid;
     const voteDisabled = (voteVoid
       ? m.uid !== voteTarget
       : (!!state.myVote || state.observedP2P.vote)) || votingClosed;
@@ -4419,7 +4484,7 @@ function renderActionPanel() {
     }));
   }
   voteSec.append(voteBtns);
-  if (state.myVote) voteSec.append(receiptStatusRow(actionReceipted(state.uid, 'vote', state.myVote)));
+  if (state.myVote) voteSec.append(receiptStatusRow(ownVoteReceipted())); // 便 VOTEEXTRA（反証 VE-R01）
   panel.append(voteSec);
 
   // 密告（最大2名）

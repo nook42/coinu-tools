@@ -1001,6 +1001,108 @@ try {
   Date.now = realDateNow;
 }
 
+// ---- 便 DOMOVED（2026-11-26・本番の保守の依頼・ユーザーの決め「では直しましょう。」）: DO が別の機械へ移った後も
+// 古い実体につながったままの WS。storage がこの誤りを投げたら、その WS を 4012 で1回だけ閉じて張り直させる。ping 以外には
+// 閉じる前に Internal error を返す（反証 DM-R01）。閉じられなければ Internal error だけ（DM-R02）。ほかの誤りでは閉じない。
+{
+  const movedMessage = 'cannot access storage because object has moved to a different machine';
+  ok('DOMOVED 閉じる code は 4012（アプリ用・4001 でない＝公式クライアントは張り直す）',
+    cgMod.WS_CLOSE_OBJECT_MOVED === 4012 && cgMod.WS_CLOSE_OBJECT_MOVED !== cgMod.WS_CLOSE_SUPERSEDED);
+  ok('DOMOVED 判定は決まった文言だけ（Error と文字列・大文字小文字・ほかの文言・形の違い）',
+    cgMod.isObjectMovedError(new Error(movedMessage)) && cgMod.isObjectMovedError(movedMessage)
+      && cgMod.isObjectMovedError(new Error(`Error: ${movedMessage.toUpperCase()}`))
+      && !cgMod.isObjectMovedError(new Error('Durable Object reset because its code was updated.'))
+      && !cgMod.isObjectMovedError(new Error('boom')) && !cgMod.isObjectMovedError(new Error('object has moved'))
+      && !cgMod.isObjectMovedError(null)
+      && !cgMod.isObjectMovedError({ message: 5 }) && !cgMod.isObjectMovedError(undefined));
+  const { inst, players } = await makeGroup();
+  await setPhase(inst, 'chatting');
+  const real = { get: inst.storage.get, put: inst.storage.put, list: inst.storage.list, delete: inst.storage.delete };
+  let storageCalls = 0;
+  // 冒頭の無効化の印（'invalidatedNoGame'）の読みは通し、その後の get・put・list・delete で投げる（各処理の中まで入ってから落ちる）
+  // 本番の形: 冒頭の読みも含めて storage のすべてが投げる（ping はこれで落ちる）
+  const failAll = (makeError) => {
+    inst.storage.get = async () => { storageCalls++; throw makeError(); };
+    inst.storage.put = async () => { storageCalls++; throw makeError(); };
+    inst.storage.list = async () => { storageCalls++; throw makeError(); };
+    inst.storage.delete = async () => { storageCalls++; throw makeError(); };
+  };
+  const failAfterGate = (makeError) => {
+    inst.storage.get = async (key) => { storageCalls++; if (key === 'invalidatedNoGame') return undefined; throw makeError(); };
+    inst.storage.put = async () => { storageCalls++; throw makeError(); };
+    inst.storage.list = async () => { storageCalls++; throw makeError(); };
+    inst.storage.delete = async () => { storageCalls++; throw makeError(); };
+  };
+  const strikeCloses = []; const realNoteStrikeClose = inst.noteStrikeClose;
+  inst.noteStrikeClose = (uid) => { strikeCloses.push(uid); return realNoteStrikeClose.call(inst, uid); };
+  const realConsoleError = console.error; const realConsoleLog = console.log; const realConsoleWarn = console.warn;
+  console.error = () => {}; console.log = () => {}; console.warn = () => {};
+  const results = {};
+  try {
+    const p0 = players[0];
+    const bodies = {
+      ping: { type: 'ping' },
+      chat: { type: 'chat', ...(await makeChatWsData(p0, BLOCK_NUM, GROUP_ID, 'moved?', Date.now())) },
+      vote: { type: 'vote', ...(await makeActionWsData(p0, 'vote', { targetUid: players[1].uid }, BLOCK_NUM, GROUP_ID, Date.now())) },
+      receipt: { type: 'receipt', receipt: { receiverUid: p0.uid, senderUid: players[1].uid, msgRefs: ['0x' + '1'.repeat(64)], timestamp: Date.now(), signature: '0x' + 'ab'.repeat(65) } },
+      submit: { type: 'submit', payload: {} },
+      init: { type: 'init' },
+    };
+    for (const [type, body] of Object.entries(bodies)) {
+      // ping は storage に触らないので本番の形（すべてが投げる）で、ほかは冒頭の読みを通して各処理の中で落とす
+      if (type === 'ping') failAll(() => new Error(movedMessage)); else failAfterGate(() => new Error(movedMessage));
+      const ws = makeWs(p0.uid);
+      await inst.webSocketMessage(ws, JSON.stringify(body));
+      results[type] = { closes: ws.closes.map((c) => c.code), errors: ws.errors().map((m) => m.message) };
+    }
+    // 冒頭の読みで落ちた submit（まだ種類を読んでいない）にも、閉じる前に拒否を返す
+    failAll(() => new Error(movedMessage));
+    const earlySubmit = makeWs(p0.uid);
+    await inst.webSocketMessage(earlySubmit, JSON.stringify(bodies.submit));
+    results.earlySubmit = { closes: earlySubmit.closes.map((c) => c.code), errors: earlySubmit.errors().map((m) => m.message) };
+    // 閉じた後に同じ接続へ届いたものは storage に触らない・webSocketClose も触らない
+    failAll(() => new Error(movedMessage));
+    const moved = makeWs(players[1].uid);
+    await inst.webSocketMessage(moved, JSON.stringify({ type: 'ping' }));
+    const callsAfterClose = storageCalls; const sentAfterClose = moved.sent.length;
+    await inst.webSocketMessage(moved, JSON.stringify({ type: 'chat', text: 'again' }));
+    await inst.webSocketClose(moved, 4012, 'object moved');
+    results.afterClose = { storage: storageCalls - callsAfterClose, sent: moved.sent.length - sentAfterClose, closes: moved.closes.length };
+    // close が投げる形（実行環境の決まりで code を拒まれた場合）: 黙らず Internal error を1回だけ返す
+    for (const type of ['ping', 'submit']) {
+      if (type === 'ping') failAll(() => new Error(movedMessage)); else failAfterGate(() => new Error(movedMessage));
+      const ws = makeWs(players[2].uid);
+      ws.close = () => { throw new Error('Invalid WebSocket close code'); };
+      await inst.webSocketMessage(ws, JSON.stringify(bodies[type]));
+      results[`closeThrows_${type}`] = { errors: ws.errors().map((m) => m.message), readyState: ws.readyState };
+    }
+    // ほかの誤りでは閉じず、今までどおり Internal error
+    failAfterGate(() => new Error('boom'));
+    const other = makeWs(players[3].uid);
+    await inst.webSocketMessage(other, JSON.stringify(bodies.submit));
+    results.other = { closes: other.closes.length, errors: other.errors().map((m) => m.message) };
+  } finally {
+    Object.assign(inst.storage, real);
+    inst.noteStrikeClose = realNoteStrikeClose;
+    console.error = realConsoleError; console.log = realConsoleLog; console.warn = realConsoleWarn;
+  }
+  ok('DOMOVED ping は 4012 で1回閉じ、Internal error を返さない',
+    JSON.stringify(results.ping) === JSON.stringify({ closes: [4012], errors: [] }), JSON.stringify(results.ping));
+  ok('DOMOVED 各処理の中で落ちた chat・vote・receipt・submit・init は、Internal error を1回返してから 4012 で1回閉じる',
+    ['chat', 'vote', 'receipt', 'submit', 'init'].every((type) => JSON.stringify(results[type]) === JSON.stringify({ closes: [4012], errors: ['Internal error'] })),
+    JSON.stringify(results));
+  ok('DOMOVED 冒頭の storage の読みで落ちた submit にも、Internal error を返してから 4012 で閉じる',
+    JSON.stringify(results.earlySubmit) === JSON.stringify({ closes: [4012], errors: ['Internal error'] }), JSON.stringify(results.earlySubmit));
+  ok('DOMOVED 閉じた後に届いたものと webSocketClose は storage に触らず、何も送らない',
+    results.afterClose.storage === 0 && results.afterClose.sent === 0 && results.afterClose.closes === 1, JSON.stringify(results.afterClose));
+  ok('DOMOVED 4012 で閉じても連打の切断（noteStrikeClose）に数えない', strikeCloses.length === 0, JSON.stringify(strikeCloses));
+  ok('DOMOVED close が投げたら黙らず Internal error を1回だけ返す（ping も submit も）',
+    JSON.stringify(results.closeThrows_ping.errors) === JSON.stringify(['Internal error'])
+      && JSON.stringify(results.closeThrows_submit.errors) === JSON.stringify(['Internal error']), JSON.stringify([results.closeThrows_ping, results.closeThrows_submit]));
+  ok('DOMOVED ほかの storage の誤りでは閉じず、今までどおり Internal error を返す',
+    results.other.closes === 0 && JSON.stringify(results.other.errors) === JSON.stringify(['Internal error']), JSON.stringify(results.other));
+}
+
 console.log('');
 if (failed > 0) { console.error(`❌ ${failed} FAILED (${passed} passed)`); process.exit(1); }
 console.log(`✅ ALL PASSED (${passed} checks)`);

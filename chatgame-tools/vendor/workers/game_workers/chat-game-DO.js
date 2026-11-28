@@ -53,6 +53,7 @@ import { verifyBundleCore } from './lib/evidence-reconciler.js';
 //    写経すると実装が増え、必ずどれか1つが取り残される（本プロジェクト最頻の失敗形）。
 import { iterativeJsonStringify, actionSnapshotPreimage } from './lib/game-result-calculator.js';
 import { canonicalRosterText } from './lib/roster-canonical.js';
+import { isReactionShape, mergeReactionInto, pickReaction } from './lib/reaction.js';
 import {
   compactPayloadToBytes,
   decodeEvidenceCompactV1,
@@ -96,6 +97,11 @@ const WS_FREE_AVAILABILITY = 10;                  // set_availability の無料�
 const WS_FREE_PRESENCE = 120;                     // set_presence の回復する枠/接続の容量（2分ごとの合図＋10分ごとの往復に余裕）
 const WS_PRESENCE_REFILL_MS = 30000;              // 30秒に1つ回復（端数の時間は持ち越す・容量で頭打ち）
 const PRESENCE_RELAY_MIN_MS = 60000;              // 同じuidの不変activeを配る最短間隔（状態変化は即配信）
+// 便 LIKE（2026-11-26）: 発言へのいいね（表示だけ・採点に無関係）。押す・外すの連打は回復する枠で制限し、枠の外は黙って捨てる。
+const WS_FREE_REACTIONS = 60;                      // reaction（いいね）の回復する枠/接続の容量
+const WS_REACTION_REFILL_MS = 2000;                // 2秒に1つ回復
+const WS_REACTION_DROPS_PER_STRIKE = 20;           // 枠の外で捨てた reaction 20件ごとに連打の数えを1つ
+const REACTION_TIME_SLACK_MS = 24 * 60 * 60 * 1000; // 押した人の時計とサーバーの時計の差の許容（表示だけなので広く）
 const WS_FREE_RECEIPTS = 600;                     // 受領証明の無料枠/接続（既読バッチ＋action受領。正規≈メッセージ数以下）
 // R33-F-1-01（ユーザー決定 D-12・2026-09-27）: WS の接続本数に uid ごとの上限を置き、プレイヤーを優先する。
 // 名簿のメンバーは自分の session token だけで接続を何本でも張れた（探針: 同じ uid・同じ token の300本が
@@ -118,6 +124,20 @@ export const WS_MAX_TOTAL_SOCKETS_PER_UID = 16;
 // （張り直すと同じ人の別のタブ・端末を追い出し返し、互いを追い出し続ける）。
 export const WS_CLOSE_SUPERSEDED = 4001;
 const WS_CLOSE_SUPERSEDED_REASON = 'superseded';
+// 2026-11-26（本番の保守の依頼・ユーザーの決め「では直しましょう。」・便 DOMOVED）: Cloudflare が DO を別の機械へ移した後も、
+// 古い実体につながったままの WS が残ると、届くものが storage に触るたびに「cannot access storage because object has moved to
+// a different machine」で失敗し続けた（`Internal error` を返すだけで閉じないので、クライアントは張り直さなかった・本番の
+// wrangler tail で 30 秒〈ping の間隔〉ごと）。この誤りのときだけ、その WS を閉じて張り直させる（公式クライアントは
+// 4001 以外の close で張り直す・新しい接続は新しい実体へ行く）。ほかの誤りでは閉じない（張り直しの繰り返しを招かない）。
+// 閉じた後の webSocketClose は storage に触らない。code はアプリ用の 4012（1012 は WHATWG の決まりでは close に使えず、
+// 実行環境の互換の設定しだいで拒まれうる・反証 DM-R02）。ping 以外の発信（提出など）には、閉じる前に今までどおり
+// Internal error を返す（拒否を黙って落とさない・反証 DM-R01）。閉じられなければ今までどおり Internal error だけを返す。
+export const WS_CLOSE_OBJECT_MOVED = 4012;
+const WS_CLOSE_OBJECT_MOVED_REASON = 'object moved';
+export function isObjectMovedError(error) {
+  const text = typeof error === 'string' ? error : (typeof error?.message === 'string' ? error.message : '');
+  return /object has moved to a different machine/i.test(text);
+}
 // 同じ uid の upgrade の頻度の上限。本数の上限の下でも upgrade を連打すると、1本ごとの auth の
 // Service Binding・storage・broadcast の費用が続く。**認証に通った** upgrade を uid ごとに数え、窓の中で
 // 上限に達したら auth の前と後（accept 前の同期区間）で 429 を返す。accept・storage・broadcast・
@@ -157,6 +177,12 @@ const LIVE_SNAPSHOT_ALARM_KEY = 'live_snapshot_alarm';
 const SUBMISSION_SNAPSHOT_ALARM_KEY = 'live_submissions_snapshot_alarm';
 const SUBMISSION_SNAPSHOT_FINAL_STATUS_KEY = 'submissionSnapshotFinalStatus';
 const INVALIDATED_NO_GAME_KEY = 'invalidatedNoGame';
+// 便 PLAYAT 反証 PA-R02（2026-11-25）: 先に設定した参加予定時刻（/seed-availability）が、待機中の
+// 宣言のチャット開始より前のとき、「開始から参加」と読んで開始時刻へ寄せてよい幅。
+// 値はエントリーの時（古い開始の見込み）に入れるので、その後に grace が延長されると新しい開始より
+// 前になる。grace の延長の上限は BLOCK_TIME（本番4日）で、それより前の値はこのブロックの窓の値として
+// 説明できないので入れない（余裕を見て8日）。
+const AVAILABILITY_SEED_CLAMP_REACH_MS = 8 * 24 * 60 * 60 * 1000;
 
 // A3-12 / A3-8（2026-08-24）: ChatGameDO の永続観測。
 // 履歴配列は持たず、飽和カウンタ＋最終状態／最終失敗だけを保存するため際限なく育たない。
@@ -180,6 +206,9 @@ export const CHAT_HTTP_AUTH_METHODS = Object.freeze({
   '/invalidate-no-game': 'POST',
   '/debug-submission': 'POST',
   '/cleanup': 'POST',
+  // 便 PLAYAT（2026-11-25）: 先に設定した参加予定時刻の受け取り口。グループのメンバーにだけ見せる値を
+  // 保存して全員へ配る口なので、GameMasterDO 以外から呼べないようにする。
+  '/seed-availability': 'POST',
 });
 const CHAT_HTTP_AUTH_PATHS = new Set(Object.keys(CHAT_HTTP_AUTH_METHODS));
 const boundedError = (error) => String(error?.message || error || 'unknown error')
@@ -587,6 +616,32 @@ export class ChatGameDO {
     return this.strikeWs(ws, uid, reason);
   }
 
+  // 便 LIKE: いいね（表示だけ）の時間で戻る枠。枠を超えた分は黙って捨て（真を返す）、連打の数えは
+  // 捨てた分の WS_REACTION_DROPS_PER_STRIKE 件ごとに1つだけ足す（正直な画面は枠より遅く送るので、捨てる前に止まる。
+  // 押し続けるだけでチャットの接続を閉じさせない・それでも氾濫は最後には閉じる）。
+  dropIfOverReactionQuota(ws, uid) {
+    const a = this.wsAbuseOf(ws);
+    const buckets = a.refillingOps ||= new Map();
+    const now = Date.now();
+    let bucket = buckets.get('reaction');
+    if (!bucket) {
+      bucket = { tokens: WS_FREE_REACTIONS, at: now };
+      buckets.set('reaction', bucket);
+    }
+    const refill = Math.floor(Math.max(0, now - bucket.at) / WS_REACTION_REFILL_MS);
+    if (refill > 0) {
+      bucket.tokens = Math.min(WS_FREE_REACTIONS, bucket.tokens + refill);
+      bucket.at += refill * WS_REACTION_REFILL_MS;
+    }
+    if (bucket.tokens > 0) {
+      bucket.tokens--;
+      return false;
+    }
+    a.reactionDrops = (a.reactionDrops || 0) + 1;
+    if (a.reactionDrops % WS_REACTION_DROPS_PER_STRIKE === 0) this.strikeWs(ws, uid, 'reaction spam');
+    return true;
+  }
+
   noteStrikeClose(uid) {
     if (!uid) return;
     const now = Date.now();
@@ -751,6 +806,12 @@ export class ChatGameDO {
     // ストレージクリーンアップ（GameMasterDO経由、RELEASE_TIMEチェックなし）
     if (path === '/cleanup' && request.method === 'POST') {
       return this.handleCleanup();
+    }
+
+    // 便 PLAYAT（2026-11-25）: エントリーの時とマイページで先に設定した参加予定時刻を、
+    // GameMasterDO が初期化の後に渡す口（認証は上の台帳 CHAT_HTTP_AUTH_METHODS）
+    if (path === '/seed-availability' && request.method === 'POST') {
+      return this.handleSeedAvailability(request);
     }
 
     return createCORSResponse({ error: 'Not Found' }, 404);
@@ -1902,12 +1963,14 @@ export class ChatGameDO {
     // close(4001/1008) の後も、相手が Close に応えなければメッセージが届く。
     // storage 読みより先に、数値の OPEN(1) 以外は応答せず捨てる。
     if (typeof ws?.readyState !== 'number' || ws.readyState !== WS_READY_STATE_OPEN) return;
+    let messageType = null; // 便 DOMOVED: catch で ping と他を分ける（読めなければ null）
     try {
       if (await this.storage.get(INVALIDATED_NO_GAME_KEY)) {
         try { ws.close(1008, 'Timeline no-game invalidated'); } catch { /* already closed */ }
         return;
       }
       const data = JSON.parse(message);
+      messageType = typeof data?.type === 'string' ? data.type : null;
       const tags = this.state.getTags(ws);
       const tag = tags[0];
 
@@ -1922,7 +1985,7 @@ export class ChatGameDO {
 
       // G4: 総メッセージ量の粗いキャップ（ping含む全種別。24h正規接続≈3,000に対し5,000）
       const abuse = this.wsAbuseOf(ws);
-      abuse.total++;
+      if (data?.type !== 'reaction') abuse.total++; // 便 LIKE: いいねは自分の枠（dropIfOverReactionQuota）で縛り、総量には数えない（Lean RS2-L03）
       if (abuse.total > WS_TOTAL_MSG_MAX) {
         console.warn(`WS message budget exceeded: uid=${uid} — closing connection`);
         this.noteStrikeClose(uid);
@@ -1955,6 +2018,9 @@ export class ChatGameDO {
         case 'set_presence':
           await this.handleWsSetPresence(ws, uid, data);
           break;
+        case 'reaction':
+          await this.handleWsReaction(ws, uid, data);
+          break;
         case 'report':
           await this.handleWsReport(ws, uid, data);
           break;
@@ -1975,6 +2041,22 @@ export class ChatGameDO {
       }
     } catch (error) {
       console.error('Error handling WebSocket message:', error);
+      // 便 DOMOVED: 古い実体につながったままの WS は閉じて張り直させる（この誤りのときだけ）
+      if (isObjectMovedError(error)) {
+        // 冒頭の storage の読みで落ちたときは、まだ種類を読んでいない（誤りの道でだけ読み直す）
+        if (messageType === null) {
+          try { const parsed = JSON.parse(message); messageType = typeof parsed?.type === 'string' ? parsed.type : null; } catch { /* 読めない */ }
+        }
+        if (messageType !== 'ping' && messageType !== 'reaction') this.sendTo(ws, { type: 'error', message: 'Internal error' });
+        try {
+          ws.close(WS_CLOSE_OBJECT_MOVED, WS_CLOSE_OBJECT_MOVED_REASON);
+          return;
+        } catch {
+          if (messageType !== 'ping' && messageType !== 'reaction') return; // 拒否はもう返した
+        }
+      }
+      // 便 LIKE: いいね（表示だけ・待ち行列から自動で出る）の失敗では誤りの帯を出させない（反証 RS3-R08）
+      if (messageType === 'reaction') return;
       this.sendTo(ws, { type: 'error', message: 'Internal error' });
     }
   }
@@ -2112,6 +2194,8 @@ export class ChatGameDO {
       availability,
       everOnlineUids,
       awayUids,
+      // 便 LIKE: 発言へのいいね（署名つき・表示だけ）。この欄があることで、クライアントは WS でも送ってよいと知る
+      reactions: await this.collectReactions(memberList),
       activeUids: await this.computeActiveUids()
     });
 
@@ -2719,7 +2803,12 @@ export class ChatGameDO {
     } else {
       availability[uid] = availableAt;
     }
-    await this.storage.put('availability', availability);
+    // 便 PLAYAT（2026-11-25）: 本人が WS で設定・クリアした uid には印を立て、後から届く
+    // 「先に設定した値」（/seed-availability）を入れない。本人がここで消した値が、遅れて届いた
+    // 古い値で戻るのを防ぐ。印は `availability` と同じ1回の put で書く（片方だけ書けた状態を作らない）。
+    const availabilitySeedClosed = uidMap(await this.storage.get('availabilitySeedClosed'));
+    availabilitySeedClosed[uid] = true;
+    await this.storage.put({ availability, availabilitySeedClosed });
 
     // 全員に反映（冪等なので除外なし＝送信者の他タブにも届く）
     this.broadcast({
@@ -2729,6 +2818,103 @@ export class ChatGameDO {
     });
 
     console.log(`Availability set by ${uid}: ${availableAt}`);
+  }
+
+  // 便 PLAYAT（2026-11-25）: 先に設定した参加予定時刻の受け取り口（GameMasterDO から・API_SECRET 必須）。
+  // 利用者がエントリーの時かマイページで入れた値（`users.entry_blocks[N].playAt`）を、GameMasterDO が
+  // 初期化の後に集めて `{ availability: { uid: エポックms } }` で渡す。署名なし・採点に無関係の表示だけの値。
+  // 🔴 上書きしない（依頼書 I5）: 入れるのは、名簿のメンバーで、まだ値が無く、本人が WS で触っておらず、
+  //    前に渡したことも無い uid だけ。本人が今の画面で入れた・消した値の方が新しいので、そちらを残す。
+  // 🔴 名簿のメンバーを回す（本文の鍵を回さない）。本文は API_SECRET を持つ呼び手が作るが、
+  //    大きさに関係なく手数を名簿の人数までにしておく。
+  async handleSeedAvailability(request) {
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return createCORSResponse({ error: 'Request body must be JSON' }, 400);
+    }
+    const incoming = body?.availability;
+    if (incoming === null || typeof incoming !== 'object' || Array.isArray(incoming)) {
+      return createCORSResponse({ error: 'availability object is required' }, 400);
+    }
+    // ここから下で await するのは storage の読み書きだけ（本文の読みは上で済ませた）。
+    // 読んでから書くまでの間に WS の `set_availability` が割り込むと、本人の操作を古い写しで潰すため。
+    if (await this.storage.get(INVALIDATED_NO_GAME_KEY)) {
+      return createCORSResponse({ error: 'Timeline no-game is terminal' }, 409);
+    }
+    const phase = await this.storage.get('phase');
+    if (phase !== 'waiting' && phase !== 'chatting') {
+      // 参加予定時刻を出すのは開始待機とチャット中だけ（WS の口と同じ）。失敗ではないので 200 で返す。
+      return createCORSResponse({ success: true, applied: 0, skipped: 'phase' });
+    }
+
+    const members = await this.storage.get('members');
+    const availability = uidMap(await this.storage.get('availability')); // P-2026-0823
+    const availabilitySeedClosed = uidMap(await this.storage.get('availabilitySeedClosed'));
+    // チャット中に一度オンラインになった人は「復帰予定」の扱いで、接続の時に予定時刻を消している。
+    // 開始前に入れた値を、その後から戻さない。
+    const everOnline = phase === 'chatting' ? uidMap(await this.storage.get('everOnline')) : null;
+    const phaseEndTime = await this.storage.get('phaseEndTime');
+    const periodDurations = await this.storage.get('periodDurations');
+
+    // 外枠は WS の口と同じ（過去1分〜未来48h）。その内側を、読めるならチャットの窓で狭める。
+    //   waiting : phaseEndTime＝宣言のチャット開始 → [開始, 開始 + gamePeriod]
+    //   chatting: phaseEndTime＝チャットの終わり   → 終わり以下
+    // 窓が読めないとき（手動の遷移で phaseEndTime が null など）は外枠だけで見る。
+    // 反証 PA-R02: waiting で窓が読めるとき、開始より前（開始−8日まで）の値は「開始から参加」と読み、
+    //   開始時刻へ寄せてから同じ検査を当てる。初期化より前に grace が延長されると、エントリーの時に入れた
+    //   値（札の既定の「開始ちょうど」など）が新しい開始より前になり、黙って捨てられていたため。
+    //   寄せるのは waiting だけ（chatting の phaseEndTime はチャットの終わりで、過去の値は今までどおり入れない）。
+    //   寄せた値をそのまま保存するので、開始時刻が安全な整数のときだけ寄せる。
+    const now = Date.now();
+    let earliest = now - 60 * 1000;
+    let latest = now + 48 * 60 * 60 * 1000;
+    let clampStart = null;
+    const endTimeReadable = Number.isFinite(phaseEndTime) && phaseEndTime > 0;
+    if (phase === 'waiting') {
+      const gamePeriod = periodDurations?.gamePeriod;
+      if (endTimeReadable && Number.isFinite(gamePeriod) && gamePeriod > 0) {
+        earliest = Math.max(earliest, phaseEndTime);
+        latest = Math.min(latest, phaseEndTime + gamePeriod);
+        if (Number.isSafeInteger(phaseEndTime)) clampStart = phaseEndTime;
+      }
+    } else if (endTimeReadable) {
+      latest = Math.min(latest, phaseEndTime);
+    }
+
+    const applied = [];
+    for (const member of Array.isArray(members) ? members : []) {
+      const uid = member?.uid;
+      // 自分の鍵としてあるときだけ見る（`toString` などプロトタイプ由来の値を拾わない）。
+      if (typeof uid !== 'string' || !Object.hasOwn(incoming, uid)) continue;
+      if (availabilitySeedClosed[uid] || availability[uid] != null) continue;
+      if (everOnline && everOnline[uid]) continue;
+      let value = incoming[uid];
+      if (!Number.isSafeInteger(value)) continue;
+      // PA-R02: 開始より前の値を開始へ寄せる。寄せた後の値にも下の検査をそのまま当てるので、
+      // 開始が今−60秒より前（遷移が遅れている）なら今までどおり入らない。保存と配信は寄せた後の値。
+      if (clampStart !== null && value < clampStart && value >= clampStart - AVAILABILITY_SEED_CLAMP_REACH_MS) {
+        value = clampStart;
+      }
+      if (value < earliest || value > latest) continue;
+      availability[uid] = value;
+      availabilitySeedClosed[uid] = true; // 一度渡した uid には二度と入れない（値が後で消えても、再送で戻さない）
+      applied.push([uid, value]);
+    }
+    if (applied.length === 0) {
+      return createCORSResponse({ success: true, applied: 0 });
+    }
+
+    // 値と印は1回の put で書く（片方だけ書けた状態を作らず、「渡した uid には必ず印がある」を保存の上でも保つ）。
+    // 配るのは書けた後（書けなかった値を画面にだけ出さない）。
+    await this.storage.put({ availability, availabilitySeedClosed });
+    for (const [uid, availableAt] of applied) {
+      this.broadcast({ type: 'availability_update', uid, availableAt });
+    }
+    // 値は本人とグループのメンバーにだけ見せるものなので、ログには件数だけを出す。
+    console.log(`Availability seeded: applied=${applied.length}`);
+    return createCORSResponse({ success: true, applied: applied.length });
   }
 
   // 在席状態（active / away）の受理と配信（v3.3追補）。
@@ -2761,6 +2947,45 @@ export class ChatGameDO {
       relayAt.set(uid, now);
       this.broadcast({ type: 'presence_update', uid, state });
     }
+  }
+
+  // 便 LIKE（2026-11-26・ユーザーの指示）: 発言へのいいね。表示だけで、採点・受理・提出物・受領証明には使わない。
+  // 署名は確かめない（受け取る各クライアントが名簿の signKey で確かめ、合わないものを捨てる）。ここで見るのは、
+  // 接続の uid と同じ名義・形・時刻の大まかな範囲・名簿のメンバーであることだけ。おかしなものは黙って捨てる
+  // （古いクライアントにも新しいクライアントにも、エラーの帯を出させない）。枠を超えた分も黙って捨てる（dropIfOverReactionQuota）。
+  // 保存は uid ごとの鍵 `reactions:{uid}`（1つの値が大きくならないように）に、（発言, 種類）ごとの最新だけ・上限つき。
+  async handleWsReaction(ws, uid, data) {
+    if (this.dropIfOverReactionQuota(ws, uid)) return;
+    const phase = await this.storage.get('phase');
+    if (phase !== 'chatting') return;
+    const reaction = data?.reaction;
+    if (!isReactionShape(reaction) || reaction.uid !== uid) return;
+    if (Math.abs(Date.now() - reaction.timestamp) > REACTION_TIME_SLACK_MS) return;
+    const members = await this.storage.get('members') || [];
+    if (!members.some((m) => m?.uid === uid)) return;
+    await this.serializeActionByActor(uid, 'reaction', async () => {
+      const key = `reactions:${uid}`;
+      const table = await this.storage.get(key) || {};
+      if (!mergeReactionInto(table, reaction)) return;
+      await this.storage.put(key, table);
+      this.broadcast({ type: 'reaction', reaction: pickReaction(reaction) });
+    });
+  }
+
+  // 便 LIKE: 名簿のメンバーの保存済みのいいねを一覧にする（init_response 用）。表示だけなので、読めなくても
+  // init は止めない（空の一覧を返す）。
+  async collectReactions(memberList) {
+    const keys = (memberList || []).map((m) => m?.uid).filter((u) => typeof u === 'string' && u).map((u) => `reactions:${u}`);
+    if (keys.length === 0) return [];
+    let stored;
+    try { stored = await this.storage.get(keys); } catch { return []; }
+    if (!(stored instanceof Map)) return [];
+    const out = [];
+    for (const table of stored.values()) {
+      if (!table || typeof table !== 'object') continue;
+      for (const r of Object.values(table)) if (isReactionShape(r)) out.push(pickReaction(r));
+    }
+    return out;
   }
 
   // 同じ発信者・種別の署名検証待ちが重なっても、保存件数の読み書きを直列にする。
